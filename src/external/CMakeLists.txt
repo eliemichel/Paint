@@ -10,3 +10,12 @@ set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory(glfw)
 set_property(TARGET glfw PROPERTY FOLDER "External")
+
+# NanoVG
+file(GLOB nanovg_SRC
+    "nanovg/src/*.c"
+    "nanovg/src/*.h"
+)
+add_library(nanovg ${nanovg_SRC})
+target_include_directories(nanovg PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/nanovg/src")
+set_property(TARGET nanovg PROPERTY FOLDER "External")

@@ -9,3 +9,4 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(Paint glad)
 target_link_libraries(Paint glfw)
+target_link_libraries(Paint nanovg)

@@ -4,3 +4,6 @@
 [submodule "src/external/glad"]
 	path = src/external/glad
 	url = https://github.com/Dav1dde/glad
+[submodule "src/external/nanovg"]
+	path = src/external/nanovg
+	url = https://github.com/memononen/nanovg
