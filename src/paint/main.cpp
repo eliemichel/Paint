@@ -100,6 +100,7 @@ public:
 	const std::string & Label() const { return m_label; }
 	void SetLabel(const std::string & label) { m_label = label; }
 
+public:
 	void Paint(NVGcontext *vg) const override {
 		const ::Rect & r = Rect();
 		nvgBeginPath(vg);
@@ -126,7 +127,7 @@ public:
 		: m_isMouseOver(false)
 		, m_wasMouseOver(false)
 		, m_isFadingOut(false)
-		, m_fadingDuration(2.0)
+		, m_fadingDuration(1.0)
 	{
 		SetSizeHint(::Rect(0, 0, 56, 0));
 		SetBackgroundColor(25, 121, 202);
@@ -135,6 +136,7 @@ public:
 		SetLabel("Fichier");
 	}
 
+public:
 	bool OnMouseOver(int x, int y) override {
 		SetBackgroundColor(41, 140, 225);
 		m_isMouseOver = true;
@@ -156,7 +158,7 @@ public:
 				m_isFadingOut = false;
 				t = 1.0f;
 			}
-			SetBackgroundColor(nvgLerpRGBA(nvgRGB(41, 140, 225), nvgRGB(25, 121, 202), t));
+			SetBackgroundColor(nvgLerpRGBA(nvgRGB(41, 140, 225), nvgRGB(25, 121, 202), pow(t, 0.5)));
 		}
 
 		// Reset
@@ -175,7 +177,7 @@ public:
 		nvgStroke(vg);
 	}
 
-protected:
+public:
 	virtual void OnMouseLeave() {
 		std::cout << "FileButton::OnMouseLeave" << std::endl;
 		m_isFadingOut = true;
@@ -186,7 +188,7 @@ private:
 	bool m_isMouseOver, m_wasMouseOver;
 	bool m_isFadingOut;
 	float m_fadingStartTime; // in seconds
-	float m_fadingDuration; // in seconds
+	const float m_fadingDuration; // in seconds
 };
 
 class HomeButton : public UiButton {
@@ -199,6 +201,7 @@ public:
 		SetLabel("Accueil");
 	}
 
+public:
 	void Paint(NVGcontext *vg) const override {
 		UiButton::Paint(vg);
 
@@ -213,41 +216,139 @@ public:
 	}
 };
 
-// TODO: get rid of tis global
-VBoxLayout *layout;
+class UiWindow : public UiElement {
+public:
+	UiWindow()
+		: m_isValid(false)
+		, m_content(NULL)
+	{
+		std::cout << "Starting GLFW context, OpenGL ES 3.0" << std::endl;
+		// Init GLFW
+		glfwInit();
+		// Set all the required options for GLFW
+		glfwWindowHint(GLFW_OPENGL_API, GLFW_OPENGL_ES_API);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+		//glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+		//glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
+
+		// Create a GLFWwindow object that we can use for GLFW's functions
+		m_window = glfwCreateWindow(WIDTH, HEIGHT, "Paint", NULL, NULL);
+		glfwMakeContextCurrent(m_window);
+		if (m_window == NULL)
+		{
+			std::cout << "Failed to create GLFW window" << std::endl;
+			glfwTerminate();
+			m_isValid = false;
+			return;
+		}
+
+		// Set the required callback functions
+		glfwSetWindowUserPointer(m_window, static_cast<void*>(this));
+		glfwSetKeyCallback(m_window, key_callback);
+		glfwSetCursorPosCallback(m_window, cursor_pos_callback);
+
+		if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+		{
+			std::cout << "Failed to initialize OpenGL context" << std::endl;
+			m_isValid = false;
+			return;
+		}
+
+		// Init NanoVG
+		glfwMakeContextCurrent(m_window);
+		std::cout << "Starting NanoVG" << std::endl;
+		m_vg = nvgCreateGLES3(NVG_ANTIALIAS | NVG_STENCIL_STROKES | NVG_DEBUG); // TODO: try w/o NVG_STENCIL_STROKES
+		if (NULL == m_vg) {
+			std::cout << "Failed to initialize NanoVG context" << std::endl;
+			glfwTerminate();
+			m_isValid = false;
+			return;
+		}
+
+		m_isValid = true;
+	}
+
+	~UiWindow() {
+		glfwSetWindowUserPointer(m_window, NULL);
+
+		if (NULL != m_content) {
+			delete m_content;
+		}
+
+		// Destroy NanoVG ctxw
+		nvgDeleteGLES3(m_vg);
+
+		// Terminates GLFW, clearing any resources allocated by GLFW.
+		glfwTerminate();
+	}
+
+	struct NVGcontext* DrawingContext() { return m_vg; }
+
+	bool ShouldClose() {
+		return glfwWindowShouldClose(m_window);
+	}
+
+	void BeginRender() const {
+		int winWidth, winHeight;
+		int fbWidth, fbHeight;
+		float pxRatio;
+
+		glfwGetWindowSize(m_window, &m_width, &m_height);
+		glfwGetFramebufferSize(m_window, &fbWidth, &fbHeight);
+		// Calculate pixel ration for hi-dpi devices.
+		pxRatio = (float)fbWidth / (float)m_width;
+
+		glViewport(0, 0, fbWidth, fbHeight);
+
+		// Render
+		// Clear the colorbuffer
+		glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glEnable(GL_CULL_FACE);
+		glDisable(GL_DEPTH_TEST);
+
+		nvgBeginFrame(m_vg, m_width, m_height, pxRatio);
+	}
+
+	void EndRender() const {
+		// UI Objects
+		Content()->OnTick();
+		Content()->Paint(m_vg);
+
+		nvgEndFrame(m_vg);
+
+		// Swap the screen buffers
+		glfwSwapBuffers(m_window);
+	}
+
+	void Render() const {
+		BeginRender();
+		EndRender();
+	}
+
+	int Width() const { return m_width; }
+	int Height() const { return m_height; }
+
+	UiElement *Content() const { return m_content; }
+	void SetContent(UiElement *element) { m_content = element; }
+
+private:
+	bool m_isValid;
+	GLFWwindow* m_window;
+	struct NVGcontext* m_vg;
+	UiElement *m_content;
+	mutable int m_width, m_height;
+};
 
 // The MAIN function, from here we start the application and run the game loop
 int main()
 {
-	std::cout << "Starting GLFW context, OpenGL ES 3.0" << std::endl;
-	// Init GLFW
-	glfwInit();
-	// Set all the required options for GLFW
-	glfwWindowHint(GLFW_OPENGL_API, GLFW_OPENGL_ES_API);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-	//glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	//glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
-
-	// Create a GLFWwindow object that we can use for GLFW's functions
-	GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "Paint", NULL, NULL);
-	glfwMakeContextCurrent(window);
-	if (window == NULL)
-	{
-		std::cout << "Failed to create GLFW window" << std::endl;
-		glfwTerminate();
-		return -1;
-	}
-
-	// Set the required callback functions
-	glfwSetKeyCallback(window, key_callback);
-	glfwSetCursorPosCallback(window, cursor_pos_callback);
-
-	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-	{
-		std::cout << "Failed to initialize OpenGL context" << std::endl;
-		return -1;
-	}
+	UiWindow window;
+	struct NVGcontext* vg = window.DrawingContext();
 
 	// Document
 	Editor *ed = new Editor();
@@ -255,7 +356,8 @@ int main()
 	doc->width = 254;
 	doc->height = 280;
 
-	layout = new VBoxLayout();
+	VBoxLayout *layout = new VBoxLayout();
+	window.SetContent(layout);
 
 	HBoxLayout *top = new HBoxLayout();
 	FileButton *fileButton = new FileButton();
@@ -265,22 +367,38 @@ int main()
 	top->SetSizeHint(Rect(0, 0, 0, 24));
 	layout->AddItem(top);
 
-	UiElement *shelf = new UiElement();
+	HBoxLayout *shelf = new HBoxLayout();
+	UiElement *spacer = new UiElement();
+	spacer->SetSizeHint(Rect(0, 0, 871, 0));
+	shelf->AddItem(spacer);
+	GridLayout *colorGrid = new GridLayout();
+	colorGrid->SetRowCount(3);
+	colorGrid->SetColCount(10);
+	colorGrid->SetRowSpacing(2);
+	colorGrid->SetColSpacing(2);
+
+	float color[][3] = {
+		{ 0, 0, 0 },{ 127, 127, 127 },{ 136, 0, 21 },{ 237, 28, 36 },{ 255, 127, 39 },{ 255, 242, 0 },{ 34, 177, 76 },{ 0, 162, 232 },{ 63, 72, 204 },{ 163, 73, 164 },
+		{ 255, 255, 255 },{ 195, 195, 195 },{ 185, 122, 87 },{ 255, 174, 201 },{ 255, 201, 14 },{ 239, 228, 176 },{ 181, 230, 29 },{ 153, 217, 234 },{ 112, 146, 190 },{ 200, 191, 231 },
+		{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 }
+	};
+	for (int i = 0; i < 30; ++i) {
+		if (color[i][0] != -1) {
+			UiButton *colorButton = new UiButton();
+			colorButton->SetBackgroundColor(color[i][0], color[i][1], color[i][2]);
+			colorGrid->AddItem(colorButton);
+		}
+	}
+
+	colorGrid->SetSizeHint(Rect(0, 0, 218, 0));
+	shelf->AddItem(colorGrid);
 	shelf->SetSizeHint(Rect(0, 0, 0, 92));
 	layout->AddItem(shelf);
+
 	layout->AddItem(new UiElement());
 	layout->AddItem(new UiElement());
 	layout->SetRect(0, 0, WIDTH, HEIGHT);
 
-	// Init NanoVG
-	glfwMakeContextCurrent(window);
-	std::cout << "Starting NanoVG" << std::endl;
-	struct NVGcontext* vg = nvgCreateGLES3(NVG_ANTIALIAS | NVG_STENCIL_STROKES | NVG_DEBUG); // TODO: try w/o NVG_STENCIL_STROKES
-	if (vg == NULL) {
-		std::cout << "Failed to initialize NanoVG context" << std::endl;
-		glfwTerminate();
-		return -1;
-	}
 
 	// Load images
 	Image pasteOffImg(vg, "images\\pasteOff32.png");
@@ -307,42 +425,23 @@ int main()
 	int font = nvgCreateFont(vg, "SegeoUI", (shareDir + "fonts\\segoeui.ttf").c_str());
 
 	// Game loop
-	while (!glfwWindowShouldClose(window))
+	while (!window.ShouldClose())
 	{
-		int winWidth, winHeight;
-		int fbWidth, fbHeight;
-		float pxRatio;
-
-		glfwGetWindowSize(window, &winWidth, &winHeight);
-		glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
-		// Calculate pixel ration for hi-dpi devices.
-		pxRatio = (float)fbWidth / (float)winWidth;
-
-		glViewport(0, 0, fbWidth, fbHeight);
-
-		// Render
-		// Clear the colorbuffer
-		glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		glEnable(GL_CULL_FACE);
-		glDisable(GL_DEPTH_TEST);
-
-		nvgBeginFrame(vg, winWidth, winHeight, pxRatio);
+		window.BeginRender();
+		int winWidth = window.Width();
+		int winHeight = window.Height();
 
 		// Tabs
 		nvgBeginPath(vg);
 		nvgRect(vg, 56+64, 0, winWidth - (56+64), 24);
-		nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
+		nvgFillColor(vg, nvgRGB(255, 255, 255));
 		nvgFill(vg);
 
 		// // Tab Titles
 		nvgFontFaceId(vg, font);
 		nvgFontSize(vg, 15);
 
-		nvgFillColor(vg, nvgRGBA(60, 60, 60, 255));
+		nvgFillColor(vg, nvgRGB(60, 60, 60));
 		nvgText(vg, 134, 16, "Affichage", NULL);
 		
 		// Shelf
@@ -621,14 +720,7 @@ int main()
 		zoomOutImg.Paint(winWidth - 143, winHeight - 25 + 4);
 		zoomInImg.Paint(winWidth - 21, winHeight - 25 + 4);
 
-		// UI Objects
-		layout->OnTick();
-		layout->Paint(vg);
-
-		nvgEndFrame(vg);
-
-		// Swap the screen buffers
-		glfwSwapBuffers(window);
+		window.EndRender();
 
 		// Check if any events have been activated (key pressed, mouse moved etc.) and call corresponding response functions
 		glfwPollEvents();
@@ -656,31 +748,33 @@ int main()
 	zoomOutImg.Delete();
 	zoomInImg.Delete();
 
-	// Destroy NanoVG ctxw
-	nvgDeleteGLES3(vg);
-
 	// Delete document
 	delete ed;
 	delete doc;
-
-	// Terminates GLFW, clearing any resources allocated by GLFW.
-	glfwTerminate();
-
-	delete layout;
 
 	return 0;
 }
 
 // Is called whenever a key is pressed/released via GLFW
-void key_callback(GLFWwindow* window, int key, int scancode, int action, int mode)
+void key_callback(GLFWwindow* glfwWindow, int key, int scancode, int action, int mode)
 {
+	UiWindow* window = static_cast<UiWindow*>(glfwGetWindowUserPointer(glfwWindow));
+	if (!window) {
+		return;
+	}
+
 	std::cout << key << std::endl;
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-		glfwSetWindowShouldClose(window, GL_TRUE);
+		glfwSetWindowShouldClose(glfwWindow, GL_TRUE);
 }
 
-void cursor_pos_callback(GLFWwindow* window, double xpos, double ypos)
+void cursor_pos_callback(GLFWwindow* glfwWindow, double xpos, double ypos)
 {
-	layout->ResetDebug();
-	layout->OnMouseOver(xpos, ypos);
+	UiWindow* window = static_cast<UiWindow*>(glfwGetWindowUserPointer(glfwWindow));
+	if (!window) {
+		return;
+	}
+
+	window->Content()->ResetDebug();
+	window->Content()->OnMouseOver(xpos, ypos);
 }

@@ -25,6 +25,12 @@ public:
 		}
 	}
 
+	/// Take ownership of the item
+	void AddItem(UiElement *item) {
+		m_items.push_back(item);
+	}
+
+public:
 	bool OnMouseOver(int x, int y) override {
 		bool hit = UiElement::OnMouseOver(x, y);
 		if (hit) {
@@ -136,11 +142,6 @@ public:
 			item->Paint(vg);
 		}
 		PaintDebug(vg);
-	}
-
-	/// Take ownership of the item
-	void AddItem(UiElement *item) {
-		m_items.push_back(item);
 	}
 
 private:
