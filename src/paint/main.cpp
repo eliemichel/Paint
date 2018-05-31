@@ -1,3 +1,7 @@
+/**
+ * Paint Portable
+ * Copyright (c) 2018 - Elie Michel
+ */
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
@@ -9,6 +13,8 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+
+#include "BaseUi.h"
 
 // Function prototypes
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mode);
@@ -75,108 +81,136 @@ struct Editor {
 	Editor() : zoom(1.0f) {}
 };
 
-struct Rect {
-	int x, y, w, h;
+// Custom UI elements
 
-	Rect() : x(0), y(0), w(0), h(0) {}
-	Rect(int _x, int _y, int _w, int _h) : x(_x), y(_y), w(_w), h(_h) {}
-
-	bool Contains(int _x, int _y) const {
-		return _x >= x && _y >= y && _x < x + w && _y < y + h;
-	}
-};
-
-class UiElement {
+class UiButton : public UiElement {
 public:
-	virtual bool QueryAt(int x, int y) {
-		bool hit = Rect().Contains(x, y);
-		m_debug = hit;
-		return hit;
-	}
+	const NVGcolor & BackgroundColor() const { return m_backgroundColor; }
+	void SetBackgroundColor(const NVGcolor & color) { m_backgroundColor = color; }
+	void SetBackgroundColor(unsigned char r, unsigned char g, unsigned char b) { m_backgroundColor = nvgRGB(r, g, b); }
 
-	virtual void ResetDebug() {
-		m_debug = false;
-	}
+	const NVGcolor & TextColor() const { return m_textColor; }
+	void SetTextColor(const NVGcolor & color) { m_textColor = color; }
+	void SetTextColor(unsigned char r, unsigned char g, unsigned char b) { m_textColor = nvgRGB(r, g, b); }
 
-	void SetRect(Rect rect) {
-		m_rect = rect;
-		Update();
-	}
-	void SetRect(int x, int y, int w, int h) {
-		SetRect(::Rect(x, y, w, h));
-	}
-	const Rect & Rect() const {
-		return m_rect;
-	}
+	const NVGcolor & BorderColor() const { return m_borderColor; }
+	void SetBorderColor(const NVGcolor & color) { m_borderColor = color; }
+	void SetBorderColor(unsigned char r, unsigned char g, unsigned char b) { m_borderColor = nvgRGB(r, g, b); }
 
-	/// MUST NOT call this->SetRect()
-	virtual void Update() {
-	}
+	const std::string & Label() const { return m_label; }
+	void SetLabel(const std::string & label) { m_label = label; }
 
-	virtual void Paint(NVGcontext *vg) const {
-		if (m_debug) {
-			nvgBeginPath(vg);
-			nvgRect(vg, Rect().x, Rect().y, Rect().w, Rect().h);
-			nvgFillColor(vg, nvgRGBA(255, 0, 0, 64));
-			nvgFill(vg);
-		}
+	void Paint(NVGcontext *vg) const override {
+		const ::Rect & r = Rect();
+		nvgBeginPath(vg);
+		nvgRect(vg, r.x, r.y, r.w, r.h);
+		nvgFillColor(vg, BackgroundColor());
+		nvgFill(vg);
+
+		nvgFontSize(vg, 15);
+		nvgTextAlign(vg, NVG_ALIGN_CENTER);
+		nvgFillColor(vg, TextColor());
+		nvgText(vg, r.x + r.w / 2, r.y + 16, Label().c_str(), NULL);
 	}
 
 private:
-	::Rect m_rect;
-	bool m_debug;
+	NVGcolor m_backgroundColor;
+	NVGcolor m_textColor;
+	NVGcolor m_borderColor;
+	std::string m_label;
 };
 
-class VBoxLayout : public UiElement {
+class FileButton : public UiButton {
 public:
-	~VBoxLayout() {
-		while (!m_items.empty()) {
-			delete m_items.back();
-			m_items.pop_back();
-		}
+	FileButton()
+		: m_isMouseOver(false)
+		, m_wasMouseOver(false)
+		, m_isFadingOut(false)
+		, m_fadingDuration(2.0)
+	{
+		SetSizeHint(::Rect(0, 0, 56, 0));
+		SetBackgroundColor(25, 121, 202);
+		SetTextColor(255, 255, 255);
+		SetBorderColor(218, 219, 220);
+		SetLabel("Fichier");
 	}
 
-	bool QueryAt(int x, int y) override {
-		bool hit = UiElement::QueryAt(x, y);
-		if (hit) {
-			int itemHeight = Rect().h / m_items.size();
-			size_t i = std::min((size_t)(floor((y - Rect().y) / itemHeight)), m_items.size() - 1);
-			m_items[i]->QueryAt(x, y);
-		}
-		return hit;
+	bool OnMouseOver(int x, int y) override {
+		SetBackgroundColor(41, 140, 225);
+		m_isMouseOver = true;
+		return true;
 	}
 
-	void ResetDebug() override {
-		UiElement::ResetDebug();
-		for (auto item : m_items) {
-			item->ResetDebug();
+	void OnTick() override {
+		UiButton::Update();
+		if (m_isMouseOver && !m_wasMouseOver) {
+			//OnMouseEnter();
 		}
-	}
-
-	void Update() override {
-		int itemHeight = floor(Rect().h / m_items.size());
-		// Prevent rounding issues
-		int lastItemHeight = Rect().h - (m_items.size() - 1) * itemHeight;
-
-		for (size_t i = 0 ; i < m_items.size() ; ++i) {
-			m_items[i]->SetRect(Rect().x, Rect().y + i * itemHeight, Rect().w, i == (m_items.size() - 1) ? lastItemHeight : itemHeight);
+		if (!m_isMouseOver && m_wasMouseOver) {
+			OnMouseLeave();
 		}
+
+		if (m_isFadingOut) {
+			float t = (glfwGetTime() - m_fadingStartTime) / m_fadingDuration;
+			if (t > 1.0f) {
+				m_isFadingOut = false;
+				t = 1.0f;
+			}
+			SetBackgroundColor(nvgLerpRGBA(nvgRGB(41, 140, 225), nvgRGB(25, 121, 202), t));
+		}
+
+		// Reset
+		m_wasMouseOver = m_isMouseOver;
+		m_isMouseOver = false;
 	}
 
 	void Paint(NVGcontext *vg) const override {
-		UiElement::Paint(vg);
-		for (UiElement *item : m_items) {
-			item->Paint(vg);
-		}
+		UiButton::Paint(vg);
+
+		const ::Rect & r = Rect();
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, r.x, r.y + r.h - 0.5);
+		nvgLineTo(vg, r.x + r.w, r.y + r.h - 0.5);
+		nvgStrokeColor(vg, BorderColor());
+		nvgStroke(vg);
 	}
 
-	/// Take ownership of the item
-	void AddItem(UiElement *item) {
-		m_items.push_back(item);
+protected:
+	virtual void OnMouseLeave() {
+		std::cout << "FileButton::OnMouseLeave" << std::endl;
+		m_isFadingOut = true;
+		m_fadingStartTime = glfwGetTime();
 	}
 
 private:
-	std::vector<UiElement*> m_items;
+	bool m_isMouseOver, m_wasMouseOver;
+	bool m_isFadingOut;
+	float m_fadingStartTime; // in seconds
+	float m_fadingDuration; // in seconds
+};
+
+class HomeButton : public UiButton {
+public:
+	HomeButton() {
+		SetSizeHint(::Rect(0, 0, 65, 0));
+		SetBackgroundColor(245, 246, 247);
+		SetTextColor(60, 60, 60);
+		SetBorderColor(218, 219, 220);
+		SetLabel("Accueil");
+	}
+
+	void Paint(NVGcontext *vg) const override {
+		UiButton::Paint(vg);
+
+		const ::Rect & r = Rect();
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, r.x + 0.5, r.y + r.h);
+		nvgLineTo(vg, r.x + 0.5, r.y + 0.5);
+		nvgLineTo(vg, r.x + r.w - 0.5, r.y + 0.5);
+		nvgLineTo(vg, r.x + r.w - 0.5, r.y + r.h);
+		nvgStrokeColor(vg, BorderColor());
+		nvgStroke(vg);
+	}
 };
 
 // TODO: get rid of tis global
@@ -222,6 +256,18 @@ int main()
 	doc->height = 280;
 
 	layout = new VBoxLayout();
+
+	HBoxLayout *top = new HBoxLayout();
+	FileButton *fileButton = new FileButton();
+	top->AddItem(fileButton);
+	HomeButton *homeButton = new HomeButton();
+	top->AddItem(homeButton);
+	top->SetSizeHint(Rect(0, 0, 0, 24));
+	layout->AddItem(top);
+
+	UiElement *shelf = new UiElement();
+	shelf->SetSizeHint(Rect(0, 0, 0, 92));
+	layout->AddItem(shelf);
 	layout->AddItem(new UiElement());
 	layout->AddItem(new UiElement());
 	layout->SetRect(0, 0, WIDTH, HEIGHT);
@@ -288,16 +334,6 @@ int main()
 
 		// Tabs
 		nvgBeginPath(vg);
-		nvgRect(vg, 0, 0, 56, 24);
-		nvgFillColor(vg, nvgRGBA(25, 121, 202, 255));
-		nvgFill(vg);
-
-		nvgBeginPath(vg);
-		nvgRect(vg, 56, 0, 64, 24);
-		nvgFillColor(vg, nvgRGBA(245, 246, 247, 255));
-		nvgFill(vg);
-
-		nvgBeginPath(vg);
 		nvgRect(vg, 56+64, 0, winWidth - (56+64), 24);
 		nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
 		nvgFill(vg);
@@ -305,13 +341,6 @@ int main()
 		// // Tab Titles
 		nvgFontFaceId(vg, font);
 		nvgFontSize(vg, 15);
-
-		nvgTextAlign(vg, NVG_ALIGN_LEFT);
-		nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
-		nvgText(vg, 12, 16, "Fichier", NULL);
-
-		nvgFillColor(vg, nvgRGBA(60, 60, 60, 255));
-		nvgText(vg, 69, 16, "Accueil", NULL);
 
 		nvgFillColor(vg, nvgRGBA(60, 60, 60, 255));
 		nvgText(vg, 134, 16, "Affichage", NULL);
@@ -458,7 +487,7 @@ int main()
 		// Back Color
 		nvgBeginPath(vg);
 		nvgRect(vg, 774 + 61.5, 24 + 12.5, 23, 23);
-		nvgStrokeColor(vg, nvgRGB(128, 128, 228));
+		nvgStrokeColor(vg, nvgRGB(128, 128, 128));
 		nvgStroke(vg);
 
 		nvgBeginPath(vg);
@@ -593,6 +622,7 @@ int main()
 		zoomInImg.Paint(winWidth - 21, winHeight - 25 + 4);
 
 		// UI Objects
+		layout->OnTick();
 		layout->Paint(vg);
 
 		nvgEndFrame(vg);
@@ -652,5 +682,5 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 void cursor_pos_callback(GLFWwindow* window, double xpos, double ypos)
 {
 	layout->ResetDebug();
-	layout->QueryAt(xpos, ypos);
+	layout->OnMouseOver(xpos, ypos);
 }
