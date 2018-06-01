@@ -216,6 +216,50 @@ public:
 	}
 };
 
+class ColorButton : public UiElement {
+public:
+	ColorButton() : m_isEnabled(true) {}
+
+	const NVGcolor & Color() const { return m_color; }
+	void SetColor(const NVGcolor & color) { m_color = color; }
+	void SetColor(unsigned char r, unsigned char g, unsigned char b) { m_color = nvgRGB(r, g, b); }
+
+	bool IsEnabled() const { return m_isEnabled; }
+	void SetEnabled(bool enabled) { m_isEnabled = enabled; }
+
+public:
+	void Paint(NVGcontext *vg) const override {
+		const ::Rect & r = Rect();
+		
+		// White border
+		if (m_isEnabled) {
+			nvgBeginPath(vg);
+			nvgRect(vg, r.x, r.y, r.w, r.h);
+			nvgFillColor(vg, nvgRGB(255, 255, 255));
+			nvgFill(vg);
+		}
+
+		// Main Border
+		nvgBeginPath(vg);
+		nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+		nvgStrokeColor(vg, nvgRGB(160, 160, 160));
+		nvgStroke(vg);
+
+		// Color
+		if (m_isEnabled) {
+			nvgBeginPath(vg);
+			nvgRect(vg, r.x + 2, r.y + 2, r.w - 4, r.h - 4);
+			nvgFillColor(vg, Color());
+			nvgFill(vg);
+		}
+	}
+
+private:
+	NVGcolor m_color;
+	bool m_isEnabled;
+};
+
+
 class UiWindow : public UiElement {
 public:
 	UiWindow()
@@ -368,9 +412,15 @@ int main()
 	layout->AddItem(top);
 
 	HBoxLayout *shelf = new HBoxLayout();
-	UiElement *spacer = new UiElement();
-	spacer->SetSizeHint(Rect(0, 0, 871, 0));
-	shelf->AddItem(spacer);
+	UiElement *hSpacer = new UiElement();
+	hSpacer->SetSizeHint(Rect(0, 0, 871, 0));
+	shelf->AddItem(hSpacer);
+
+	VBoxLayout *colorShelf = new VBoxLayout();
+	UiElement *vSpacerTop = new UiElement();
+	vSpacerTop->SetSizeHint(Rect(0, 0, 0, 5));
+	colorShelf->AddItem(vSpacerTop);
+
 	GridLayout *colorGrid = new GridLayout();
 	colorGrid->SetRowCount(3);
 	colorGrid->SetColCount(10);
@@ -383,15 +433,21 @@ int main()
 		{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 }
 	};
 	for (int i = 0; i < 30; ++i) {
-		if (color[i][0] != -1) {
-			UiButton *colorButton = new UiButton();
-			colorButton->SetBackgroundColor(color[i][0], color[i][1], color[i][2]);
-			colorGrid->AddItem(colorButton);
-		}
+		ColorButton *colorButton = new ColorButton();
+		colorButton->SetColor(color[i][0], color[i][1], color[i][2]);
+		colorButton->SetEnabled(color[i][0] != -1);
+		colorGrid->AddItem(colorButton);
 	}
 
-	colorGrid->SetSizeHint(Rect(0, 0, 218, 0));
-	shelf->AddItem(colorGrid);
+	//colorGrid->SetSizeHint(Rect(0, 0, 218, 64));
+	colorShelf->AddItem(colorGrid);
+
+	UiElement *vSpacerBottom = new UiElement();
+	vSpacerBottom->SetSizeHint(Rect(0, 0, 0, 23));
+	colorShelf->AddItem(vSpacerBottom);
+
+	colorShelf->SetSizeHint(Rect(0, 0, 218, 0));
+	shelf->AddItem(colorShelf);
 	shelf->SetSizeHint(Rect(0, 0, 0, 92));
 	layout->AddItem(shelf);
 
@@ -598,35 +654,6 @@ int main()
 		nvgTextLineHeight(vg, 13.0f / 15.0f);
 		nvgFillColor(vg, nvgRGBA(60, 60, 60, 255));
 		nvgTextBox(vg, 774 + 52, 24 + 53, 42, "Couleur 2", NULL);
-
-		float color[][3] = {
-			{ 0, 0, 0 },{ 127, 127, 127 },{ 136, 0, 21 }, {237, 28, 36},{ 255, 127, 39 },{ 255, 242, 0 },{ 34, 177, 76 },{ 0, 162, 232 },{ 63, 72, 204 },{ 163, 73, 164 },
-			{ 255, 255, 255 },{ 195, 195, 195},{ 185, 122, 87 },{ 255, 174, 201 },{ 255, 201, 14 },{ 239, 228, 176 },{ 181, 230, 29 },{ 153, 217, 234 },{ 112, 146, 190 }, {200, 191, 231},
-			{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 },{ -1, -1, -1 }
-		};
-		for (int i = 0; i < 30; ++i) {
-			int x = 22 * (i % 10);
-			int y = 22 * (i / 10);
-
-			if (color[i][0] != -1) {
-				nvgBeginPath(vg);
-				nvgRect(vg, 774 + 97 + x, 24 + 5 + y, 20, 20);
-				nvgFillColor(vg, nvgRGB(255, 255, 255));
-				nvgFill(vg);
-			}
-
-			nvgBeginPath(vg);
-			nvgRect(vg, 774 + 97.5 + x, 24 + 5.5 + y, 19, 19);
-			nvgStrokeColor(vg, nvgRGB(160, 160, 160));
-			nvgStroke(vg);
-
-			if (color[i][0] != -1) {
-				nvgBeginPath(vg);
-				nvgRect(vg, 774 + 99 + x, 24 + 7 + y, 16, 16);
-				nvgFillColor(vg, nvgRGB(color[i][0], color[i][1], color[i][2]));
-				nvgFill(vg);
-			}
-		}
 
 		nvgTextAlign(vg, NVG_ALIGN_CENTER);
 		nvgFillColor(vg, nvgRGBA(90, 90, 90, 255));

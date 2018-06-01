@@ -16,18 +16,12 @@
 #define _BoxLayout VBoxLayout
 #endif
 
-class _BoxLayout : public UiElement {
+class _BoxLayout : public UiLayout {
 public:
-	~_BoxLayout() {
-		while (!m_items.empty()) {
-			delete m_items.back();
-			m_items.pop_back();
-		}
-	}
-
+	
 	/// Take ownership of the item
 	void AddItem(UiElement *item) {
-		m_items.push_back(item);
+		Items().push_back(item);
 	}
 
 public:
@@ -41,7 +35,7 @@ public:
 			*/
 
 			int offset = 0;
-			for (auto item : m_items) {
+			for (auto item : Items()) {
 #ifdef BUI_HBOX_IMPLEMENTATION
 				offset += item->Rect().w;
 				if (Rect().x + offset > x) {
@@ -57,13 +51,6 @@ public:
 		return hit;
 	}
 
-	void ResetDebug() override {
-		UiElement::ResetDebug();
-		for (auto item : m_items) {
-			item->ResetDebug();
-		}
-	}
-
 	void Update() override {
 		/* for regular items
 		int itemHeight = floor(Rect().h / m_items.size());
@@ -77,7 +64,7 @@ public:
 
 		int sumVHints = 0;
 		int nullHints = 0;
-		for (auto item : m_items) {
+		for (auto item : Items()) {
 			const ::Rect & rect = item->SizeHint();
 #ifdef BUI_HBOX_IMPLEMENTATION
 			sumVHints += rect.w;
@@ -88,7 +75,7 @@ public:
 				nullHints++;
 			}
 		}
-		int nonNullHints = m_items.size() - nullHints;
+		int nonNullHints = Items().size() - nullHints;
 #ifdef BUI_HBOX_IMPLEMENTATION
 		int remainingHeight = Rect().w - sumVHints;
 #else
@@ -103,7 +90,7 @@ public:
 		int offset = 0;
 		int nullCount = 0;
 		int nonNullCount = 0;
-		for (auto item : m_items) {
+		for (auto item : Items()) {
 			int height = 0;
 			const ::Rect & hint = item->SizeHint();
 			if (hint.IsNull()) {
@@ -128,22 +115,4 @@ public:
 			offset += height;
 		}
 	}
-
-	void OnTick() override {
-		UiElement::OnTick();
-		for (UiElement *item : m_items) {
-			item->OnTick();
-		}
-	}
-
-	void Paint(NVGcontext *vg) const override {
-		UiElement::Paint(vg);
-		for (UiElement *item : m_items) {
-			item->Paint(vg);
-		}
-		PaintDebug(vg);
-	}
-
-private:
-	std::vector<UiElement*> m_items;
 };
