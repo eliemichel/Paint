@@ -20,6 +20,7 @@
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mode);
 void cursor_pos_callback(GLFWwindow* window, double xpos, double ypos);
 void mouse_button_callback(GLFWwindow* glfwWindow, int button, int action, int mods);
+void window_size_callback(GLFWwindow* glfwWindow, int width, int height);
 
 // Window dimensions
 const GLuint WIDTH = 1200, HEIGHT = 600;
@@ -38,12 +39,24 @@ public:
 		: m_img(-1)
 		, m_vg(vg)
 	{
-		m_img = nvgCreateImage(m_vg, (shareDir + filename).c_str(), 0);
-		nvgImageSize(m_vg, m_img, &m_width, &m_height);
+		Load(vg, filename);
 	}
+
+	Image()
+		: m_img(-1)
+		, m_vg(NULL)
+	{}
 
 	~Image() {
 		Delete();
+	}
+
+	void Load(struct NVGcontext* vg, const std::string & filename) {
+		if (NULL == m_vg) {
+			m_vg = vg;
+		}
+		m_img = nvgCreateImage(m_vg, (shareDir + filename).c_str(), 0);
+		nvgImageSize(m_vg, m_img, &m_width, &m_height);
 	}
 
 	void Delete() {
@@ -54,10 +67,12 @@ public:
 	}
 
 	void Paint(float x, float y) const {
-		nvgBeginPath(m_vg);
-		nvgRect(m_vg, x, y, m_width, m_height);
-		nvgFillPaint(m_vg, nvgImagePattern(m_vg, x, y, m_width, m_height, 0, m_img, 1.0f));
-		nvgFill(m_vg);
+		if (NULL != m_vg && m_img > -1) {
+			nvgBeginPath(m_vg);
+			nvgRect(m_vg, x, y, m_width, m_height);
+			nvgFillPaint(m_vg, nvgImagePattern(m_vg, x, y, m_width, m_height, 0, m_img, 1.0f));
+			nvgFill(m_vg);
+		}
 	}
 
 private:
@@ -135,7 +150,7 @@ public:
 		: m_isFadingOut(false)
 		, m_fadingDuration(1.0)
 	{
-		SetSizeHint(::Rect(0, 0, 56, 0));
+		SetSizeHint(0, 0, 56, 0);
 		SetBackgroundColor(25, 121, 202);
 		SetTextColor(255, 255, 255);
 		SetBorderColor(218, 219, 220);
@@ -168,11 +183,11 @@ public: // protected
 	}
 
 	void OnMouseEnter() override {
+		m_isFadingOut = false;
 		SetBackgroundColor(41, 140, 225);
 	}
 
 	void OnMouseLeave() override {
-		std::cout << "FileButton::OnMouseLeave" << std::endl;
 		m_isFadingOut = true;
 		m_fadingStartTime = glfwGetTime();
 	}
@@ -208,11 +223,74 @@ public:
 	}
 };
 
+class ViewButton : public UiButton {
+public:
+	ViewButton()
+		: m_isFadingOut(false)
+		, m_fadingDuration(1.0)
+	{
+		SetSizeHint(0, 0, 77, 0);
+		SetBackgroundColor(253, 253, 255);
+		SetTextColor(60, 60, 60);
+		SetBorderColor(253, 253, 255);
+		SetLabel("Affichage");
+	}
+
+public: // protected
+	void OnTick() override {
+		UiButton::OnTick();
+
+		if (m_isFadingOut) {
+			float t = (glfwGetTime() - m_fadingStartTime) / m_fadingDuration;
+			if (t > 1.0f) {
+				m_isFadingOut = false;
+				t = 1.0f;
+			}
+			SetBorderColor(nvgLerpRGBA(nvgRGB(235, 236, 236), nvgRGB(253, 253, 255), pow(t, 0.5)));
+		}
+	}
+
+	void Paint(NVGcontext *vg) const override {
+		UiButton::Paint(vg);
+
+		const ::Rect & r = Rect();
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, r.x + 0.5, r.y + r.h + 1);
+		nvgLineTo(vg, r.x + 0.5, r.y + 0.5);
+		nvgLineTo(vg, r.x + r.w - 0.5, r.y + 0.5);
+		nvgLineTo(vg, r.x + r.w - 0.5, r.y + r.h + 1);
+		nvgStrokeColor(vg, BorderColor());
+		nvgStroke(vg);
+
+		// Bottom border
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, r.x, r.y + r.h - 0.5);
+		nvgLineTo(vg, r.x + r.w, r.y + r.h - 0.5);
+		nvgStrokeColor(vg, nvgRGB(218, 219, 220));
+		nvgStroke(vg);
+	}
+
+	void OnMouseEnter() override {
+		m_isFadingOut = false;
+		SetBorderColor(235, 236, 236);
+	}
+
+	void OnMouseLeave() override {
+		m_isFadingOut = true;
+		m_fadingStartTime = glfwGetTime();
+	}
+
+private:
+	bool m_isFadingOut;
+	float m_fadingStartTime; // in seconds
+	const float m_fadingDuration; // in seconds
+};
+
 class ColorButton : public UiMouseAwareElement {
 public:
 	ColorButton()
-		: m_isEnabled(true),
-		m_isMouseOver(false)
+		: m_isEnabled(true)
+		, m_isMouseOver(false)
 	{}
 
 	const NVGcolor & Color() const { return m_color; }
@@ -267,6 +345,171 @@ private:
 	bool m_isMouseOver;
 };
 
+class MenuBar : public HBoxLayout {
+public:
+	MenuBar() {
+		SetSizeHint(0, 0, 0, 24);
+	}
+
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		const ::Rect & r = Rect();
+
+		nvgBeginPath(vg);
+		nvgRect(vg, r.x, r.y, r.w, r.h);
+		nvgFillColor(vg, nvgRGB(253, 253, 255));
+		nvgFill(vg);
+
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, r.x, r.y + r.h - 0.5);
+		nvgLineTo(vg, r.x + r.w, r.y + r.h - 0.5);
+		nvgStrokeColor(vg, nvgRGB(218, 219, 220));
+		nvgStroke(vg);
+
+		HBoxLayout::Paint(vg);
+	}
+};
+
+
+class StatusBar : public HBoxLayout {
+public:
+	StatusBar() {
+		SetSizeHint(0, 0, 0, 25);
+	}
+
+	~StatusBar() {
+		DeleteImages();
+	}
+
+	void LoadImages(NVGcontext *vg) {
+		m_cursorImg.Load(vg, "images\\cursor18.png");
+		m_selectionImg.Load(vg, "images\\selection18.png");
+		m_sizeImg.Load(vg, "images\\size18.png");
+		m_savedImg.Load(vg, "images\\saved18.png");
+		m_zoomOutImg.Load(vg, "images\\zoomOut18.png");
+		m_zoomInImg.Load(vg, "images\\zoomIn18.png");
+	}
+
+	// Call this or destroy object before the NVG context gets freed
+	void DeleteImages() {
+		m_cursorImg.Delete();
+		m_selectionImg.Delete();
+		m_sizeImg.Delete();
+		m_savedImg.Delete();
+		m_zoomOutImg.Delete();
+		m_zoomInImg.Delete();
+	}
+
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		const ::Rect & r = Rect();
+
+		nvgBeginPath(vg);
+		nvgRect(vg, r.x, r.y, r.w, r.h);
+		nvgFillColor(vg, nvgRGB(240, 240, 240));
+		nvgFill(vg);
+
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, r.x, r.y - 0.5);
+		nvgLineTo(vg, r.x + r.w, r.y - 0.5);
+		nvgStrokeColor(vg, nvgRGB(218, 219, 220));
+		nvgStroke(vg);
+
+		float sb_delim_pos[] = { 155, 311, 467, 623, r.w - 199, r.w - 1 };
+		for (int i = 0; i < 6; ++i) {
+			nvgBeginPath(vg);
+			nvgMoveTo(vg, r.x + sb_delim_pos[i] + 0.5, r.y + 1);
+			nvgLineTo(vg, r.x + sb_delim_pos[i] + 0.5, r.y + r.h - 1);
+			nvgStrokeColor(vg, nvgRGB(226, 227, 228));
+			nvgStroke(vg);
+		}
+
+		m_cursorImg.Paint(r.x + 1, r.y + 3);
+		m_selectionImg.Paint(r.x + 159, r.y + 3);
+		m_sizeImg.Paint(r.x + 315, r.y + 3);
+		m_savedImg.Paint(r.x + 471, r.y + 3);
+		m_zoomOutImg.Paint(r.x + r.w - 143, r.y + 4);
+		m_zoomInImg.Paint(r.x + r.w - 21, r.y + 4);
+
+		HBoxLayout::Paint(vg);
+	}
+
+private:
+	Image m_cursorImg, m_selectionImg, m_sizeImg, m_savedImg, m_zoomOutImg, m_zoomInImg;
+};
+
+class PaintArea : public UiMouseAwareElement {
+public:
+	PaintArea()
+		: UiMouseAwareElement()
+		, m_doc(NULL)
+	{}
+
+	Document * Document() const { return m_doc; }
+	void SetDocument(::Document *doc) { m_doc = doc; }
+
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		const ::Rect & r = Rect();
+		nvgScissor(vg, r.x, r.y, r.w, r.h);
+
+		nvgBeginPath(vg);
+		nvgRect(vg, r.x, r.y, r.w, r.h);
+		nvgFillColor(vg, nvgRGB(200, 209, 225));
+		//nvgFillColor(vg, nvgRGB(225, 159, 150));
+		nvgFill(vg);
+
+		float drawingWidth = Document()->width * ed->zoom;
+		float drawingHeight = Document()->height * ed->zoom;
+
+		// Shadow
+		nvgBeginPath(vg);
+		nvgRect(vg, 5 + 10, 24 + 92 + 5 + 10, drawingWidth, drawingHeight);
+		nvgFillPaint(vg, nvgBoxGradient(vg, 5, 24 + 92 + 5, drawingWidth + 4.5, drawingHeight + 4.5,
+			-5, 9, nvgRGBA(51, 96, 131, 30), nvgRGBA(0, 0, 0, 0)));
+		nvgFill(vg);
+
+		// Drawing
+		nvgBeginPath(vg);
+		nvgRect(vg, 5, 24 + 92 + 5, drawingWidth, drawingHeight);
+		nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
+		nvgFill(vg);
+
+		// Handles
+		nvgBeginPath(vg);
+		nvgRect(vg, 5 + drawingWidth, 24 + 92 + 5 + drawingHeight, 5, 5);
+		nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
+		nvgFill(vg);
+		nvgBeginPath(vg);
+		nvgRect(vg, 5 + drawingWidth + 0.5, 24 + 92 + 5 + drawingHeight + 0.5, 4, 4);
+		nvgStrokeColor(vg, nvgRGBA(85, 85, 85, 255));
+		nvgStroke(vg);
+
+		nvgBeginPath(vg);
+		nvgRect(vg, 5 + drawingWidth, 24 + 92 + 5 + floor((drawingHeight - 5) / 2.), 5, 5);
+		nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
+		nvgFill(vg);
+		nvgBeginPath(vg);
+		nvgRect(vg, 5 + drawingWidth + 0.5, 24 + 92 + 5 + floor((drawingHeight - 5) / 2.) + 0.5, 4, 4);
+		nvgStrokeColor(vg, nvgRGBA(85, 85, 85, 255));
+		nvgStroke(vg);
+
+		nvgBeginPath(vg);
+		nvgRect(vg, 5 + floor((drawingWidth - 5) / 2.), 24 + 92 + 5 + drawingHeight, 5, 5);
+		nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
+		nvgFill(vg);
+		nvgBeginPath(vg);
+		nvgRect(vg, 5 + floor((drawingWidth - 5) / 2.) + 0.5, 24 + 92 + 5 + drawingHeight + 0.5, 4, 4);
+		nvgStrokeColor(vg, nvgRGBA(85, 85, 85, 255));
+		nvgStroke(vg);
+
+		nvgResetScissor(vg);
+	}
+
+private:
+	::Document *m_doc;
+};
+
 
 class UiWindow {
 public:
@@ -300,6 +543,7 @@ public:
 		glfwSetKeyCallback(m_window, key_callback);
 		glfwSetCursorPosCallback(m_window, cursor_pos_callback);
 		glfwSetMouseButtonCallback(m_window, mouse_button_callback);
+		glfwSetWindowSizeCallback(m_window, window_size_callback);
 
 		if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 		{
@@ -325,6 +569,7 @@ public:
 	~UiWindow() {
 		glfwSetWindowUserPointer(m_window, NULL);
 
+		// Must be before nvgDelete
 		if (NULL != m_content) {
 			delete m_content;
 		}
@@ -411,7 +656,7 @@ int main()
 	struct NVGcontext* vg = window.DrawingContext();
 
 	// Document
-	//Editor *ed = new Editor();
+	//Editor *ed = new Editor(); // made global
 	ed = new Editor();
 	Document *doc = new Document();
 	doc->width = 254;
@@ -420,22 +665,28 @@ int main()
 	VBoxLayout *layout = new VBoxLayout();
 	window.SetContent(layout);
 
-	HBoxLayout *top = new HBoxLayout();
+	MenuBar *top = new MenuBar();
 	FileButton *fileButton = new FileButton();
 	top->AddItem(fileButton);
 	HomeButton *homeButton = new HomeButton();
 	top->AddItem(homeButton);
-	top->SetSizeHint(Rect(0, 0, 0, 24));
+	UiElement *buttonSpacer = new UiElement();
+	buttonSpacer->SetSizeHint(0, 0, 1, 0);
+	top->AddItem(buttonSpacer);
+	ViewButton *viewButton = new ViewButton();
+	top->AddItem(viewButton);
+	UiElement *rightButtonSpacer = new UiElement();
+	top->AddItem(rightButtonSpacer);
 	layout->AddItem(top);
 
 	HBoxLayout *shelf = new HBoxLayout();
 	UiElement *hSpacer = new UiElement();
-	hSpacer->SetSizeHint(Rect(0, 0, 871, 0));
+	hSpacer->SetSizeHint(0, 0, 871, 0);
 	shelf->AddItem(hSpacer);
 
 	VBoxLayout *colorShelf = new VBoxLayout();
 	UiElement *vSpacerTop = new UiElement();
-	vSpacerTop->SetSizeHint(Rect(0, 0, 0, 5));
+	vSpacerTop->SetSizeHint(0, 0, 0, 5);
 	colorShelf->AddItem(vSpacerTop);
 
 	GridLayout *colorGrid = new GridLayout();
@@ -463,15 +714,20 @@ int main()
 	vSpacerBottom->SetSizeHint(Rect(0, 0, 0, 23));
 	colorShelf->AddItem(vSpacerBottom);
 
-	colorShelf->SetSizeHint(Rect(0, 0, 218, 0));
+	colorShelf->SetSizeHint(0, 0, 218, 0);
 	shelf->AddItem(colorShelf);
-	shelf->SetSizeHint(Rect(0, 0, 0, 92));
+	shelf->SetSizeHint(0, 0, 0, 92);
 	layout->AddItem(shelf);
 
-	layout->AddItem(new UiElement());
-	layout->AddItem(new UiElement());
+	PaintArea *paintArea = new PaintArea();
+	paintArea->SetDocument(doc);
+	layout->AddItem(paintArea);
+
+	StatusBar *statusBar = new StatusBar();
+	layout->AddItem(statusBar);
 	layout->SetRect(0, 0, WIDTH, HEIGHT);
 
+	statusBar->LoadImages(vg);
 
 	// Load images
 	Image pasteOffImg(vg, "images\\pasteOff32.png");
@@ -488,35 +744,18 @@ int main()
 	Image pickerImg(vg, "images\\picker21.png");
 	Image zoomImg(vg, "images\\zoom21.png");
 
-	Image cursorImg(vg, "images\\cursor18.png");
-	Image selectionImg(vg, "images\\selection18.png");
-	Image sizeImg(vg, "images\\size18.png");
-	Image savedImg(vg, "images\\saved18.png");
-	Image zoomOutImg(vg, "images\\zoomOut18.png");
-	Image zoomInImg(vg, "images\\zoomIn18.png");
-
 	int font = nvgCreateFont(vg, "SegeoUI", (shareDir + "fonts\\segoeui.ttf").c_str());
 
-	// Game loop
+	// Main loop
 	while (!window.ShouldClose())
 	{
 		window.BeginRender();
 		int winWidth = window.Width();
 		int winHeight = window.Height();
 
-		// Tabs
-		nvgBeginPath(vg);
-		nvgRect(vg, 56+64, 0, winWidth - (56+64), 24);
-		nvgFillColor(vg, nvgRGB(255, 255, 255));
-		nvgFill(vg);
-
-		// // Tab Titles
 		nvgFontFaceId(vg, font);
 		nvgFontSize(vg, 15);
 
-		nvgFillColor(vg, nvgRGB(60, 60, 60));
-		nvgText(vg, 134, 16, "Affichage", NULL);
-		
 		// Shelf
 		nvgBeginPath(vg);
 		nvgRect(vg, 0, 24, winWidth, 92);
@@ -682,87 +921,9 @@ int main()
 		nvgText(vg, 722 + 25, 77, "Taille", NULL);
 
 		// // Paint Area
-		nvgScissor(vg, 0, 24+92, winWidth, winHeight - (24+92+25));
-
-		nvgBeginPath(vg);
-		nvgRect(vg, 0, 24+92, winWidth, winHeight - (24+92+25));
-		nvgFillColor(vg, nvgRGBA(200, 209, 225, 255));
-		nvgFill(vg);
-
-		float drawingWidth = doc->width * ed->zoom;
-		float drawingHeight = doc->height * ed->zoom;
-
-		// Shadow
-		nvgBeginPath(vg);
-		nvgRect(vg, 5 + 10, 24 + 92 + 5 + 10, drawingWidth, drawingHeight);
-		nvgFillPaint(vg, nvgBoxGradient(vg, 5, 24 + 92 + 5, drawingWidth + 4.5, drawingHeight + 4.5,
-			-5, 9, nvgRGBA(51, 96, 131, 30), nvgRGBA(0, 0, 0, 0)));
-		nvgFill(vg);
-
-		// Drawing
-		nvgBeginPath(vg);
-		nvgRect(vg, 5, 24 + 92 + 5, drawingWidth, drawingHeight);
-		nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
-		nvgFill(vg);
-
-		// Handles
-		nvgBeginPath(vg);
-		nvgRect(vg, 5 + drawingWidth, 24 + 92 + 5 + drawingHeight, 5, 5);
-		nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
-		nvgFill(vg);
-		nvgBeginPath(vg);
-		nvgRect(vg, 5 + drawingWidth + 0.5, 24 + 92 + 5 + drawingHeight + 0.5, 4, 4);
-		nvgStrokeColor(vg, nvgRGBA(85, 85, 85, 255));
-		nvgStroke(vg);
-
-		nvgBeginPath(vg);
-		nvgRect(vg, 5 + drawingWidth, 24 + 92 + 5 + floor((drawingHeight - 5) / 2.), 5, 5);
-		nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
-		nvgFill(vg);
-		nvgBeginPath(vg);
-		nvgRect(vg, 5 + drawingWidth + 0.5, 24 + 92 + 5 + floor((drawingHeight - 5) / 2.) + 0.5, 4, 4);
-		nvgStrokeColor(vg, nvgRGBA(85, 85, 85, 255));
-		nvgStroke(vg);
-
-		nvgBeginPath(vg);
-		nvgRect(vg, 5 + floor((drawingWidth - 5) / 2.), 24 + 92 + 5 + drawingHeight, 5, 5);
-		nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
-		nvgFill(vg);
-		nvgBeginPath(vg);
-		nvgRect(vg, 5 + floor((drawingWidth - 5) / 2.) + 0.5, 24 + 92 + 5 + drawingHeight + 0.5, 4, 4);
-		nvgStrokeColor(vg, nvgRGBA(85, 85, 85, 255));
-		nvgStroke(vg);
-
-		nvgResetScissor(vg);
+		
 
 		// Status Bar
-		nvgBeginPath(vg);
-		nvgRect(vg, 0, winHeight - 25, winWidth, 25);
-		nvgFillColor(vg, nvgRGBA(240, 240, 240, 255));
-		nvgFill(vg);
-
-		nvgBeginPath(vg);
-		nvgMoveTo(vg, 0, winHeight - 26 + 0.5);
-		nvgLineTo(vg, winWidth, winHeight - 26 + 0.5);
-		nvgStrokeColor(vg, nvgRGBA(218, 219, 220, 255));
-		nvgStroke(vg);
-
-		float sb_delim_pos[] = { 155, 311, 467, 623, winWidth - 199, winWidth - 1 };
-		for (int i = 0; i < 6; ++i) {
-			nvgBeginPath(vg);
-			nvgMoveTo(vg, sb_delim_pos[i] + 0.5, winHeight - 24);
-			nvgLineTo(vg, sb_delim_pos[i] + 0.5, winHeight - 1);
-			nvgStrokeColor(vg, nvgRGBA(226, 227, 228, 255));
-			nvgStroke(vg);
-		}
-
-		// // Status bar images
-		cursorImg.Paint(1, winHeight - 25 + 3);
-		selectionImg.Paint(159, winHeight - 25 + 3);
-		sizeImg.Paint(315, winHeight - 25 + 3);
-		savedImg.Paint(471, winHeight - 25 + 3);
-		zoomOutImg.Paint(winWidth - 143, winHeight - 25 + 4);
-		zoomInImg.Paint(winWidth - 21, winHeight - 25 + 4);
 
 		window.EndRender();
 
@@ -784,13 +945,6 @@ int main()
 	eraseImg.Delete();
 	pickerImg.Delete();
 	zoomImg.Delete();
-
-	cursorImg.Delete();
-	selectionImg.Delete();
-	sizeImg.Delete();
-	savedImg.Delete();
-	zoomOutImg.Delete();
-	zoomInImg.Delete();
 
 	// Delete document
 	delete ed;
@@ -839,4 +993,13 @@ void mouse_button_callback(GLFWwindow* glfwWindow, int button, int action, int m
 		// TODO: avoid providing the position again since the tree already checked it at the last mouse move
 		window->Content()->OnMouseClick(window->MouseX(), window->MouseY());
 	}
+}
+
+void window_size_callback(GLFWwindow* glfwWindow, int width, int height) {
+	UiWindow* window = static_cast<UiWindow*>(glfwGetWindowUserPointer(glfwWindow));
+	if (!window) {
+		return;
+	}
+
+	window->Content()->SetRect(0, 0, width, height);
 }

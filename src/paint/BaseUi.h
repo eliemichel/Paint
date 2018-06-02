@@ -38,6 +38,9 @@ public:
 	void SetSizeHint(::Rect hint) {
 		m_sizeHint = hint;
 	}
+	void SetSizeHint(int x, int y, int w, int h) {
+		m_sizeHint = ::Rect(x, y, w, h);
+	}
 	virtual ::Rect SizeHint() {
 		return m_sizeHint;
 	}
@@ -54,6 +57,7 @@ public:
 
 	// Called whenever the mouse moved anywhere, before OnMouseOver might be called
 	// This is used to keep track of when mouse comes in and gets out
+	// TODO: avoid dispatching to absolutely every object, only send to ones touched by the last mouse move.
 	virtual void ResetMouse() {
 	}
 
