@@ -46,10 +46,7 @@ public:
 	}
 
 public:
-	virtual bool OnMouseOver(int x, int y) {
-		bool hit = Rect().Contains(x, y);
-		m_debug = hit;
-		return hit;
+	virtual void OnMouseOver(int x, int y) {
 	}
 
 	virtual void OnMouseClick(int button, int action, int mods) {
@@ -103,10 +100,9 @@ public:
 	{}
 
 public: // protected
-	bool OnMouseOver(int x, int y) override {
-		bool hit = UiElement::OnMouseOver(x, y);
+	void OnMouseOver(int x, int y) override {
+		UiElement::OnMouseOver(x, y);
 		m_isMouseOver = true;
-		return hit;
 	}
 
 	void ResetMouse() override {
@@ -152,14 +148,13 @@ public:
 	}
 
 public: // protected
-	bool OnMouseOver(int x, int y) override {
+	void OnMouseOver(int x, int y) override {
 		UiElement::OnMouseOver(x, y);
 		size_t i;
 		if (GetIndexAt(i, x, y)) {
 			Items()[i]->OnMouseOver(x, y);
 			m_mouseFocusIdx = i;
 		}
-		return true;
 	}
 
 	void OnMouseClick(int button, int action, int mods) override {

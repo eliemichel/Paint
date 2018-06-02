@@ -455,7 +455,7 @@ public:
 	void SetDocument(::Document *doc) { m_doc = doc; }
 
 public: // protected
-	bool OnMouseOver(int x, int y) override {
+	void OnMouseOver(int x, int y) override {
 		m_mouseX = x;
 		m_mouseY = y;
 
@@ -467,7 +467,6 @@ public: // protected
 			float drawingHeight = m_startDeltaY + m_mouseY;
 			Document()->height = drawingHeight / ed->zoom;
 		}
-		return true;
 	}
 
 	void OnMouseClick(int button, int action, int mods) override {
