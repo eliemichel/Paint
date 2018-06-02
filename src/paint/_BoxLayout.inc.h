@@ -25,32 +25,6 @@ public:
 	}
 
 public:
-	bool OnMouseOver(int x, int y) override {
-		bool hit = UiElement::OnMouseOver(x, y);
-		if (hit) {
-			/* for regular items
-			int itemHeight = Rect().h / m_items.size();
-			size_t i = std::min((size_t)(floor((y - Rect().y) / itemHeight)), m_items.size() - 1);
-			m_items[i]->QueryAt(x, y);
-			*/
-
-			int offset = 0;
-			for (auto item : Items()) {
-#ifdef BUI_HBOX_IMPLEMENTATION
-				offset += item->Rect().w;
-				if (Rect().x + offset > x) {
-#else
-				offset += item->Rect().h;
-				if (Rect().y + offset > y) {
-#endif
-					item->OnMouseOver(x, y);
-					break;
-				}
-			}
-		}
-		return hit;
-	}
-
 	void Update() override {
 		/* for regular items
 		int itemHeight = floor(Rect().h / m_items.size());
@@ -114,5 +88,30 @@ public:
 			item->Update();
 			offset += height;
 		}
+	}
+
+protected:
+	bool GetIndexAt(size_t & idx, int x, int y) override {
+		/* for regular items
+		int itemHeight = Rect().h / m_items.size();
+		size_t i = std::min((size_t)(floor((y - Rect().y) / itemHeight)), m_items.size() - 1);
+		m_items[i]->QueryAt(x, y);
+		*/
+
+		int offset = 0;
+		for (size_t i = 0; i < Items().size(); ++i) {
+#ifdef BUI_HBOX_IMPLEMENTATION
+			offset += Items()[i]->Rect().w;
+			if (Rect().x + offset > x) {
+#else
+			offset += Items()[i]->Rect().h;
+			if (Rect().y + offset > y) {
+#endif
+				idx = i;
+				return true;
+			}
+		}
+
+		return false;
 	}
 };

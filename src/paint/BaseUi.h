@@ -49,6 +49,14 @@ public:
 		return hit;
 	}
 
+	virtual void OnMouseClick(int x, int y) {
+	}
+
+	// Called whenever the mouse moved anywhere, before OnMouseOver might be called
+	// This is used to keep track of when mouse comes in and gets out
+	virtual void ResetMouse() {
+	}
+
 	virtual void ResetDebug() {
 		m_debug = false;
 	}
@@ -79,6 +87,46 @@ private:
 	bool m_debug;
 };
 
+/**
+ * Adds OnMouseEnter() and OnMouseLeave() events
+ */
+class UiMouseAwareElement : public UiElement {
+public:
+	UiMouseAwareElement()
+		: UiElement()
+		, m_isMouseOver(false)
+		, m_wasMouseOver(false)
+	{}
+
+public: // protected
+	bool OnMouseOver(int x, int y) override {
+		bool hit = UiElement::OnMouseOver(x, y);
+		m_isMouseOver = true;
+		return hit;
+	}
+
+	void ResetMouse() override {
+		if (m_isMouseOver && !m_wasMouseOver) {
+			OnMouseEnter();
+		}
+		if (!m_isMouseOver && m_wasMouseOver) {
+			OnMouseLeave();
+		}
+
+		m_wasMouseOver = m_isMouseOver;
+		m_isMouseOver = false;
+	}
+
+	virtual void OnMouseEnter() {
+	}
+
+	virtual void OnMouseLeave() {
+	}
+
+private:
+	bool m_isMouseOver, m_wasMouseOver;
+};
+
 
 class UiLayout : public UiElement {
 public:
@@ -94,7 +142,31 @@ public:
 		m_items.push_back(item);
 	}
 
-public:
+public: // protected
+	bool OnMouseOver(int x, int y) override {
+		UiElement::OnMouseOver(x, y);
+		size_t i;
+		if (GetIndexAt(i, x, y)) {
+			Items()[i]->OnMouseOver(x, y);
+		}
+		return true;
+	}
+
+	void OnMouseClick(int x, int y) override {
+		UiElement::OnMouseClick(x, y);
+		size_t i;
+		if (GetIndexAt(i, x, y)) {
+			Items()[i]->OnMouseClick(x, y);
+		}
+	}
+
+	void ResetMouse() override {
+		UiElement::ResetMouse();
+		for (auto item : Items()) {
+			item->ResetMouse();
+		}
+	}
+
 	void ResetDebug() override {
 		UiElement::ResetDebug();
 		for (auto item : Items()) {
@@ -120,6 +192,10 @@ public:
 protected:
 	std::vector<UiElement*> & Items() { return m_items; }
 	const std::vector<UiElement*> & Items() const { return m_items; }
+
+	virtual bool GetIndexAt(size_t & idx, int x, int y) {
+		return false;
+	}
 
 private:
 	std::vector<UiElement*> m_items;
@@ -147,31 +223,6 @@ public:
 	int ColSpacing() const { return m_colSpacing; }
 
 public:
-	bool OnMouseOver(int x, int y) override {
-		bool hit = UiElement::OnMouseOver(x, y);
-		if (hit) {
-			int relativeX = x - Rect().x;
-			int relativeY = y - Rect().y;
-
-			int itemWidth = (Rect().w - ColSpacing() * (ColCount() - 1)) / ColCount() + ColSpacing();
-			int itemHeight = (Rect().h - RowSpacing() * (RowCount() - 1)) / RowCount() + RowSpacing();
-
-			size_t colIndex = std::min((int)(floor(relativeX / itemWidth)), ColCount() - 1);
-			size_t rowIndex = std::min((int)(floor(relativeY / itemHeight)), RowCount() - 1);
-
-			bool isInColSpacing = (colIndex + 1) * itemWidth - relativeX <= ColSpacing();
-			bool isInRowSpacing = (rowIndex + 1) * itemHeight - relativeY <= RowSpacing();
-
-			if (!isInRowSpacing && !isInColSpacing) {
-				size_t i = rowIndex * ColCount() + colIndex;
-				if (i < Items().size()) {
-					Items()[i]->OnMouseOver(x, y);
-				}
-			}
-		}
-		return hit;
-	}
-
 	void Update() override {
 		int itemWidth = (Rect().w - ColSpacing() * (ColCount() - 1)) / ColCount() + ColSpacing();
 		int itemHeight = (Rect().h - RowSpacing() * (RowCount() - 1)) / RowCount() + RowSpacing();
@@ -188,6 +239,29 @@ public:
 				colIndex == (ColCount() - 1) ? lastItemWidth : (itemWidth - ColSpacing()),
 				rowIndex == (RowCount() - 1) ? lastItemHeight : (itemHeight - RowSpacing())
 			);
+		}
+	}
+
+protected:
+	bool GetIndexAt(size_t & idx, int x, int y) override {
+		int relativeX = x - Rect().x;
+		int relativeY = y - Rect().y;
+
+		int itemWidth = (Rect().w - ColSpacing() * (ColCount() - 1)) / ColCount() + ColSpacing();
+		int itemHeight = (Rect().h - RowSpacing() * (RowCount() - 1)) / RowCount() + RowSpacing();
+
+		size_t colIndex = std::min((int)(floor(relativeX / itemWidth)), ColCount() - 1);
+		size_t rowIndex = std::min((int)(floor(relativeY / itemHeight)), RowCount() - 1);
+
+		bool isInColSpacing = (colIndex + 1) * itemWidth - relativeX <= ColSpacing();
+		bool isInRowSpacing = (rowIndex + 1) * itemHeight - relativeY <= RowSpacing();
+
+		if (!isInRowSpacing && !isInColSpacing) {
+			idx = rowIndex * ColCount() + colIndex;
+			return idx < Items().size();
+		}
+		else {
+			return false;
 		}
 	}
 

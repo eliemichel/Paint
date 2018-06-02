@@ -19,6 +19,7 @@
 // Function prototypes
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mode);
 void cursor_pos_callback(GLFWwindow* window, double xpos, double ypos);
+void mouse_button_callback(GLFWwindow* glfwWindow, int button, int action, int mods);
 
 // Window dimensions
 const GLuint WIDTH = 1200, HEIGHT = 600;
@@ -77,13 +78,20 @@ struct Document {
  */
 struct Editor {
 	float zoom;
+	NVGcolor foregroundColor;
 
-	Editor() : zoom(1.0f) {}
+	Editor()
+		: zoom(1.0f)
+		, foregroundColor(nvgRGB(0, 0, 0))
+	{}
 };
+
+// TODO: get rid of this global (might require some kind of signals or passing a pointer to this global state to all the widgets)
+Editor *ed;
 
 // Custom UI elements
 
-class UiButton : public UiElement {
+class UiButton : public UiMouseAwareElement {
 public:
 	const NVGcolor & BackgroundColor() const { return m_backgroundColor; }
 	void SetBackgroundColor(const NVGcolor & color) { m_backgroundColor = color; }
@@ -124,9 +132,7 @@ private:
 class FileButton : public UiButton {
 public:
 	FileButton()
-		: m_isMouseOver(false)
-		, m_wasMouseOver(false)
-		, m_isFadingOut(false)
+		: m_isFadingOut(false)
 		, m_fadingDuration(1.0)
 	{
 		SetSizeHint(::Rect(0, 0, 56, 0));
@@ -136,21 +142,9 @@ public:
 		SetLabel("Fichier");
 	}
 
-public:
-	bool OnMouseOver(int x, int y) override {
-		SetBackgroundColor(41, 140, 225);
-		m_isMouseOver = true;
-		return true;
-	}
-
+public: // protected
 	void OnTick() override {
-		UiButton::Update();
-		if (m_isMouseOver && !m_wasMouseOver) {
-			//OnMouseEnter();
-		}
-		if (!m_isMouseOver && m_wasMouseOver) {
-			OnMouseLeave();
-		}
+		UiButton::OnTick();
 
 		if (m_isFadingOut) {
 			float t = (glfwGetTime() - m_fadingStartTime) / m_fadingDuration;
@@ -160,10 +154,6 @@ public:
 			}
 			SetBackgroundColor(nvgLerpRGBA(nvgRGB(41, 140, 225), nvgRGB(25, 121, 202), pow(t, 0.5)));
 		}
-
-		// Reset
-		m_wasMouseOver = m_isMouseOver;
-		m_isMouseOver = false;
 	}
 
 	void Paint(NVGcontext *vg) const override {
@@ -177,15 +167,17 @@ public:
 		nvgStroke(vg);
 	}
 
-public:
-	virtual void OnMouseLeave() {
+	void OnMouseEnter() override {
+		SetBackgroundColor(41, 140, 225);
+	}
+
+	void OnMouseLeave() override {
 		std::cout << "FileButton::OnMouseLeave" << std::endl;
 		m_isFadingOut = true;
 		m_fadingStartTime = glfwGetTime();
 	}
 
 private:
-	bool m_isMouseOver, m_wasMouseOver;
 	bool m_isFadingOut;
 	float m_fadingStartTime; // in seconds
 	const float m_fadingDuration; // in seconds
@@ -216,9 +208,12 @@ public:
 	}
 };
 
-class ColorButton : public UiElement {
+class ColorButton : public UiMouseAwareElement {
 public:
-	ColorButton() : m_isEnabled(true) {}
+	ColorButton()
+		: m_isEnabled(true),
+		m_isMouseOver(false)
+	{}
 
 	const NVGcolor & Color() const { return m_color; }
 	void SetColor(const NVGcolor & color) { m_color = color; }
@@ -227,7 +222,7 @@ public:
 	bool IsEnabled() const { return m_isEnabled; }
 	void SetEnabled(bool enabled) { m_isEnabled = enabled; }
 
-public:
+public: // protected
 	void Paint(NVGcontext *vg) const override {
 		const ::Rect & r = Rect();
 		
@@ -235,14 +230,14 @@ public:
 		if (m_isEnabled) {
 			nvgBeginPath(vg);
 			nvgRect(vg, r.x, r.y, r.w, r.h);
-			nvgFillColor(vg, nvgRGB(255, 255, 255));
+			nvgFillColor(vg, m_isMouseOver ? nvgRGB(203, 228, 253) : nvgRGB(255, 255, 255));
 			nvgFill(vg);
 		}
 
 		// Main Border
 		nvgBeginPath(vg);
 		nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-		nvgStrokeColor(vg, nvgRGB(160, 160, 160));
+		nvgStrokeColor(vg, m_isMouseOver && m_isEnabled ? nvgRGB(100, 165, 231) : nvgRGB(160, 160, 160));
 		nvgStroke(vg);
 
 		// Color
@@ -254,13 +249,26 @@ public:
 		}
 	}
 
+	void OnMouseEnter() override {
+		m_isMouseOver = true;
+	}
+
+	void OnMouseLeave() override {
+		m_isMouseOver = false;
+	}
+
+	void OnMouseClick(int x, int y) override {
+		ed->foregroundColor = Color();
+	}
+
 private:
 	NVGcolor m_color;
 	bool m_isEnabled;
+	bool m_isMouseOver;
 };
 
 
-class UiWindow : public UiElement {
+class UiWindow {
 public:
 	UiWindow()
 		: m_isValid(false)
@@ -291,6 +299,7 @@ public:
 		glfwSetWindowUserPointer(m_window, static_cast<void*>(this));
 		glfwSetKeyCallback(m_window, key_callback);
 		glfwSetCursorPosCallback(m_window, cursor_pos_callback);
+		glfwSetMouseButtonCallback(m_window, mouse_button_callback);
 
 		if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 		{
@@ -380,12 +389,19 @@ public:
 	UiElement *Content() const { return m_content; }
 	void SetContent(UiElement *element) { m_content = element; }
 
+	double MouseX() const { return m_mouseX; }
+	void SetMouseX(double x) { m_mouseX = x; }
+
+	double MouseY() const { return m_mouseY; }
+	void SetMouseY(double y) { m_mouseY = y; }
+
 private:
 	bool m_isValid;
 	GLFWwindow* m_window;
 	struct NVGcontext* m_vg;
 	UiElement *m_content;
 	mutable int m_width, m_height;
+	double m_mouseX, m_mouseY;
 };
 
 // The MAIN function, from here we start the application and run the game loop
@@ -395,7 +411,8 @@ int main()
 	struct NVGcontext* vg = window.DrawingContext();
 
 	// Document
-	Editor *ed = new Editor();
+	//Editor *ed = new Editor();
+	ed = new Editor();
 	Document *doc = new Document();
 	doc->width = 254;
 	doc->height = 280;
@@ -631,7 +648,7 @@ int main()
 
 		nvgBeginPath(vg);
 		nvgRect(vg, 774 + 13, 24 + 9, 28, 28);
-		nvgFillColor(vg, nvgRGB(0, 0, 0));
+		nvgFillColor(vg, ed->foregroundColor);
 		nvgFill(vg);
 
 		nvgTextAlign(vg, NVG_ALIGN_CENTER);
@@ -802,6 +819,24 @@ void cursor_pos_callback(GLFWwindow* glfwWindow, double xpos, double ypos)
 		return;
 	}
 
+	window->SetMouseX(xpos);
+	window->SetMouseY(ypos);
 	window->Content()->ResetDebug();
+	window->Content()->ResetMouse();
 	window->Content()->OnMouseOver(xpos, ypos);
+}
+
+
+void mouse_button_callback(GLFWwindow* glfwWindow, int button, int action, int mods)
+{
+	UiWindow* window = static_cast<UiWindow*>(glfwGetWindowUserPointer(glfwWindow));
+	if (!window) {
+		return;
+	}
+
+	// TODO: Handle click, press and release more precisely
+	if (action == GLFW_PRESS && button == GLFW_MOUSE_BUTTON_LEFT) {
+		// TODO: avoid providing the position again since the tree already checked it at the last mouse move
+		window->Content()->OnMouseClick(window->MouseX(), window->MouseY());
+	}
 }
