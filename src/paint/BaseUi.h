@@ -52,7 +52,7 @@ public:
 		return hit;
 	}
 
-	virtual void OnMouseClick(int x, int y) {
+	virtual void OnMouseClick(int button, int action, int mods) {
 	}
 
 	// Called whenever the mouse moved anywhere, before OnMouseOver might be called
@@ -134,6 +134,11 @@ private:
 
 class UiLayout : public UiElement {
 public:
+	UiLayout()
+		: UiElement()
+		, m_mouseFocusIdx(-1)
+	{}
+
 	~UiLayout() {
 		while (!m_items.empty()) {
 			delete m_items.back();
@@ -152,15 +157,15 @@ public: // protected
 		size_t i;
 		if (GetIndexAt(i, x, y)) {
 			Items()[i]->OnMouseOver(x, y);
+			m_mouseFocusIdx = i;
 		}
 		return true;
 	}
 
-	void OnMouseClick(int x, int y) override {
-		UiElement::OnMouseClick(x, y);
-		size_t i;
-		if (GetIndexAt(i, x, y)) {
-			Items()[i]->OnMouseClick(x, y);
+	void OnMouseClick(int button, int action, int mods) override {
+		UiElement::OnMouseClick(button, action, mods);
+		if (m_mouseFocusIdx > -1 && m_mouseFocusIdx < Items().size()) {
+			Items()[m_mouseFocusIdx]->OnMouseClick(button, action, mods);
 		}
 	}
 
@@ -169,6 +174,7 @@ public: // protected
 		for (auto item : Items()) {
 			item->ResetMouse();
 		}
+		m_mouseFocusIdx = -1;
 	}
 
 	void ResetDebug() override {
@@ -203,6 +209,7 @@ protected:
 
 private:
 	std::vector<UiElement*> m_items;
+	int m_mouseFocusIdx;
 };
 
 class GridLayout : public UiLayout {

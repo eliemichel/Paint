@@ -335,8 +335,10 @@ public: // protected
 		m_isMouseOver = false;
 	}
 
-	void OnMouseClick(int x, int y) override {
-		ed->foregroundColor = Color();
+	void OnMouseClick(int button, int action, int mods) override {
+		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+			ed->foregroundColor = Color();
+		}
 	}
 
 private:
@@ -443,14 +445,72 @@ public:
 	PaintArea()
 		: UiMouseAwareElement()
 		, m_doc(NULL)
+		, m_isResizingWidth(false)
+		, m_isResizingHeight(false)
+		, m_mouseX(0)
+		, m_mouseY(0)
 	{}
 
 	Document * Document() const { return m_doc; }
 	void SetDocument(::Document *doc) { m_doc = doc; }
 
 public: // protected
+	bool OnMouseOver(int x, int y) override {
+		m_mouseX = x;
+		m_mouseY = y;
+
+		if (m_isResizingWidth) {
+			float drawingWidth = m_startDeltaX + m_mouseX;
+			Document()->width = drawingWidth / ed->zoom;
+		}
+		if (m_isResizingHeight) {
+			float drawingHeight = m_startDeltaY + m_mouseY;
+			Document()->height = drawingHeight / ed->zoom;
+		}
+		return true;
+	}
+
+	void OnMouseClick(int button, int action, int mods) override {
+		std::cout << "PaintArea::OnMouseClick()" << std::endl;
+		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+			std::cout << "press mouse left" << std::endl;
+			const ::Rect & r = Rect();
+			float drawingWidth = Document()->width * ed->zoom;
+			float drawingHeight = Document()->height * ed->zoom;
+
+			::Rect widthHandle(r.x + 5 + drawingWidth, r.y + 5 + floor((drawingHeight - 5) / 2.), 5, 5);
+			if (widthHandle.Contains(m_mouseX, m_mouseY)) {
+				std::cout << "widthHandle contains mouse" << std::endl;
+				m_isResizingWidth = true;
+				m_startDeltaX = drawingWidth - m_mouseX;
+			}
+
+			::Rect heightHandle(r.x + 5 + floor((drawingWidth - 5) / 2.), r.y + 5 + drawingHeight, 5, 5);
+			if (heightHandle.Contains(m_mouseX, m_mouseY)) {
+				m_isResizingHeight = true;
+				m_startDeltaY = drawingHeight - m_mouseY;
+			}
+
+			::Rect bothHandle(r.x + 5 + drawingWidth, r.y + 5 + drawingHeight, 5, 5);
+			if (bothHandle.Contains(m_mouseX, m_mouseY)) {
+				m_isResizingWidth = true;
+				m_isResizingHeight = true;
+				m_startDeltaX = drawingWidth - m_mouseX;
+				m_startDeltaY = drawingHeight - m_mouseY;
+			}
+		}
+
+		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE) {
+			m_isResizingWidth = false;
+			m_isResizingHeight = false;
+		}
+	}
+
 	void Paint(NVGcontext *vg) const override {
 		const ::Rect & r = Rect();
+		float drawingWidth = Document()->width * ed->zoom;
+		float drawingHeight = Document()->height * ed->zoom;
+
 		nvgScissor(vg, r.x, r.y, r.w, r.h);
 
 		nvgBeginPath(vg);
@@ -459,48 +519,45 @@ public: // protected
 		//nvgFillColor(vg, nvgRGB(225, 159, 150));
 		nvgFill(vg);
 
-		float drawingWidth = Document()->width * ed->zoom;
-		float drawingHeight = Document()->height * ed->zoom;
-
 		// Shadow
 		nvgBeginPath(vg);
-		nvgRect(vg, 5 + 10, 24 + 92 + 5 + 10, drawingWidth, drawingHeight);
-		nvgFillPaint(vg, nvgBoxGradient(vg, 5, 24 + 92 + 5, drawingWidth + 4.5, drawingHeight + 4.5,
+		nvgRect(vg, r.x + 5 + 10, r.y + 5 + 10, drawingWidth, drawingHeight);
+		nvgFillPaint(vg, nvgBoxGradient(vg, r.x + 5, r.y + 5, drawingWidth + 4.5, drawingHeight + 4.5,
 			-5, 9, nvgRGBA(51, 96, 131, 30), nvgRGBA(0, 0, 0, 0)));
 		nvgFill(vg);
 
 		// Drawing
 		nvgBeginPath(vg);
-		nvgRect(vg, 5, 24 + 92 + 5, drawingWidth, drawingHeight);
-		nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
+		nvgRect(vg, r.x + 5, r.y + 5, drawingWidth, drawingHeight);
+		nvgFillColor(vg, nvgRGB(255, 255, 255));
 		nvgFill(vg);
 
 		// Handles
 		nvgBeginPath(vg);
-		nvgRect(vg, 5 + drawingWidth, 24 + 92 + 5 + drawingHeight, 5, 5);
-		nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
+		nvgRect(vg, r.x + 5 + drawingWidth, r.y + 5 + drawingHeight, 5, 5);
+		nvgFillColor(vg, nvgRGB(255, 255, 255));
 		nvgFill(vg);
 		nvgBeginPath(vg);
-		nvgRect(vg, 5 + drawingWidth + 0.5, 24 + 92 + 5 + drawingHeight + 0.5, 4, 4);
-		nvgStrokeColor(vg, nvgRGBA(85, 85, 85, 255));
+		nvgRect(vg, r.x + 5 + drawingWidth + 0.5, r.y + 5 + drawingHeight + 0.5, 4, 4);
+		nvgStrokeColor(vg, nvgRGB(85, 85, 85));
 		nvgStroke(vg);
 
 		nvgBeginPath(vg);
-		nvgRect(vg, 5 + drawingWidth, 24 + 92 + 5 + floor((drawingHeight - 5) / 2.), 5, 5);
-		nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
+		nvgRect(vg, r.x + 5 + drawingWidth, r.y + 5 + floor((drawingHeight - 5) / 2.), 5, 5);
+		nvgFillColor(vg, nvgRGB(255, 255, 255));
 		nvgFill(vg);
 		nvgBeginPath(vg);
-		nvgRect(vg, 5 + drawingWidth + 0.5, 24 + 92 + 5 + floor((drawingHeight - 5) / 2.) + 0.5, 4, 4);
-		nvgStrokeColor(vg, nvgRGBA(85, 85, 85, 255));
+		nvgRect(vg, r.x + 5 + drawingWidth + 0.5, r.y + 5 + floor((drawingHeight - 5) / 2.) + 0.5, 4, 4);
+		nvgStrokeColor(vg, nvgRGB(85, 85, 85));
 		nvgStroke(vg);
 
 		nvgBeginPath(vg);
-		nvgRect(vg, 5 + floor((drawingWidth - 5) / 2.), 24 + 92 + 5 + drawingHeight, 5, 5);
-		nvgFillColor(vg, nvgRGBA(255, 255, 255, 255));
+		nvgRect(vg, r.x + 5 + floor((drawingWidth - 5) / 2.), r.y + 5 + drawingHeight, 5, 5);
+		nvgFillColor(vg, nvgRGB(255, 255, 255));
 		nvgFill(vg);
 		nvgBeginPath(vg);
-		nvgRect(vg, 5 + floor((drawingWidth - 5) / 2.) + 0.5, 24 + 92 + 5 + drawingHeight + 0.5, 4, 4);
-		nvgStrokeColor(vg, nvgRGBA(85, 85, 85, 255));
+		nvgRect(vg, r.x + 5 + floor((drawingWidth - 5) / 2.) + 0.5, r.y + 5 + drawingHeight + 0.5, 4, 4);
+		nvgStrokeColor(vg, nvgRGB(85, 85, 85));
 		nvgStroke(vg);
 
 		nvgResetScissor(vg);
@@ -508,6 +565,9 @@ public: // protected
 
 private:
 	::Document *m_doc;
+	bool m_isResizingWidth, m_isResizingHeight;
+	int m_mouseX, m_mouseY;
+	float m_startDeltaX, m_startDeltaY;
 };
 
 
@@ -634,19 +694,12 @@ public:
 	UiElement *Content() const { return m_content; }
 	void SetContent(UiElement *element) { m_content = element; }
 
-	double MouseX() const { return m_mouseX; }
-	void SetMouseX(double x) { m_mouseX = x; }
-
-	double MouseY() const { return m_mouseY; }
-	void SetMouseY(double y) { m_mouseY = y; }
-
 private:
 	bool m_isValid;
 	GLFWwindow* m_window;
 	struct NVGcontext* m_vg;
 	UiElement *m_content;
 	mutable int m_width, m_height;
-	double m_mouseX, m_mouseY;
 };
 
 // The MAIN function, from here we start the application and run the game loop
@@ -973,8 +1026,6 @@ void cursor_pos_callback(GLFWwindow* glfwWindow, double xpos, double ypos)
 		return;
 	}
 
-	window->SetMouseX(xpos);
-	window->SetMouseY(ypos);
 	window->Content()->ResetDebug();
 	window->Content()->ResetMouse();
 	window->Content()->OnMouseOver(xpos, ypos);
@@ -988,11 +1039,7 @@ void mouse_button_callback(GLFWwindow* glfwWindow, int button, int action, int m
 		return;
 	}
 
-	// TODO: Handle click, press and release more precisely
-	if (action == GLFW_PRESS && button == GLFW_MOUSE_BUTTON_LEFT) {
-		// TODO: avoid providing the position again since the tree already checked it at the last mouse move
-		window->Content()->OnMouseClick(window->MouseX(), window->MouseY());
-	}
+	window->Content()->OnMouseClick(button, action, mods);
 }
 
 void window_size_callback(GLFWwindow* glfwWindow, int width, int height) {
