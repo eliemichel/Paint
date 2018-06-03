@@ -59,6 +59,20 @@ public:
 		nvgImageSize(m_vg, m_img, &m_width, &m_height);
 	}
 
+	void Create(struct NVGcontext* vg, int w, int h) {
+		if (NULL == m_vg) {
+			m_vg = vg;
+		}
+		unsigned char* data = new unsigned char[w * h * 4];
+		for (size_t i = 0; i < w * h * 4; ++i) {
+			data[i] = 255;
+		}
+		m_img = nvgCreateImageRGBA(vg, w, h, NVG_IMAGE_NEAREST, data);
+		delete[] data;
+		m_width = w;
+		m_height = h;
+	}
+
 	void Delete() {
 		if (m_img > -1) {
 			nvgDeleteImage(m_vg, m_img);
@@ -66,14 +80,16 @@ public:
 		}
 	}
 
-	void Paint(float x, float y) const {
+	void Paint(float x, float y, float w = -1, float h = -1) const {
 		if (NULL != m_vg && m_img > -1) {
 			nvgBeginPath(m_vg);
-			nvgRect(m_vg, x, y, m_width, m_height);
+			nvgRect(m_vg, x, y, w >= 0 ? w : m_width, h >= 0 ? h : m_height);
 			nvgFillPaint(m_vg, nvgImagePattern(m_vg, x, y, m_width, m_height, 0, m_img, 1.0f));
 			nvgFill(m_vg);
 		}
 	}
+
+	int Handle() const { return m_img; }
 
 private:
 	int m_img; /// Image ID
@@ -86,6 +102,12 @@ private:
  */
 struct Document {
 	int width, height;
+
+	Image img;
+
+	void CreateImage(NVGcontext* vg, int w, int h) {
+		img.Create(vg, w, h);
+	}
 };
 
 /**
@@ -440,19 +462,173 @@ private:
 	Image m_cursorImg, m_selectionImg, m_sizeImg, m_savedImg, m_zoomOutImg, m_zoomInImg;
 };
 
-class PaintArea : public UiMouseAwareElement {
+
+/**
+ * May not be a good idea to mix UI and paint stroke engine
+ */
+class DrawingArea : public UiMouseAwareElement {
 public:
-	PaintArea()
+	DrawingArea()
 		: UiMouseAwareElement()
 		, m_doc(NULL)
+		, m_init(false)
+		, m_lastMouseX(0)
+		, m_lastMouseY(0)
+		, m_isStroking(false)
+	{}
+
+	~DrawingArea() {
+		if (m_init) {
+			glDeleteFramebuffers(1, &m_frameBuffer);
+			glDeleteRenderbuffers(1, &m_stencilBuffer);
+		}
+	}
+
+	// TODO: change signature
+	struct NVGcontext* StrokeEngine() { return m_vg; }
+	void SetStrokeEngine(struct NVGcontext* vg) { m_vg = vg; }
+
+	Document * Document() const { return m_doc; }
+	void SetDocument(::Document *doc) { m_doc = doc; }
+
+public: // protected
+	void OnMouseOver(int x, int y) override {
+		if (m_isStroking) {
+			Stroke(m_lastMouseX, m_lastMouseY, x, y);
+		}
+
+		m_lastMouseX = x;
+		m_lastMouseY = y;
+	}
+
+	void OnMouseClick(int button, int action, int mods) override {
+		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+			m_isStroking = true;
+		}
+		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE) {
+			m_isStroking = false;
+		}
+	}
+
+	void Paint(NVGcontext *vg) const override {
+		const ::Rect & r = Rect();
+		nvgBeginPath(vg);
+		nvgRect(vg, r.x, r.y, r.w, r.h);
+		nvgFillColor(vg, nvgRGB(255, 255, 255));
+		nvgFill(vg);
+
+		if (NULL != Document()) {
+			Document()->img.Paint(r.x, r.y, r.w, r.h);
+		}
+	}
+
+private:
+	/// That's dirty...
+	void InitStrokeEngine() {
+		if (!Document()) {
+			return;
+		}
+		// Stencil buffer
+		glGenFramebuffers(1, &m_frameBuffer);
+		glBindFramebuffer(GL_FRAMEBUFFER, m_frameBuffer);
+
+		GLuint tex = nvglImageHandleGLES3(m_vg, Document()->img.Handle());
+		glBindTexture(GL_TEXTURE_2D, tex);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+
+		glGenRenderbuffers(1, &m_stencilBuffer);
+		glBindRenderbuffer(GL_RENDERBUFFER, m_stencilBuffer);
+		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, 1024, 1024);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, m_stencilBuffer);
+
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		m_init = true;
+	}
+
+	void Stroke(float startX, float startY, float endX, float endY) {
+		if (!m_init) {
+			InitStrokeEngine();
+		}
+
+		const ::Rect & r = Rect();
+		int fbWidth = 1024, fbHeight = 1024;
+
+		glBindFramebuffer(GL_FRAMEBUFFER, m_frameBuffer);
+
+		glViewport(0, 0, fbWidth, fbHeight);
+
+		// Render
+		// Clear the colorbuffer
+		glClearColor(0.2f, 0.3f, 0.8f, 1.0f);
+		glClear(GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glEnable(GL_CULL_FACE);
+		glDisable(GL_DEPTH_TEST);
+
+		nvgBeginFrame(m_vg, fbWidth, fbHeight, 1.0f);
+		nvgSave(m_vg);
+		nvgTranslate(m_vg, 0, 1024);
+		nvgScale(m_vg, 1, -1);
+
+		nvgBeginPath(m_vg);
+		nvgMoveTo(m_vg, startX - r.x, startY - r.y);
+		nvgLineTo(m_vg, endX - r.x, endY - r.y);
+		nvgStrokeColor(m_vg, ed->foregroundColor);
+		nvgStroke(m_vg);
+
+		nvgRestore(m_vg);
+		nvgEndFrame(m_vg);
+
+		// restore framebuffer
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	}
+
+private:
+	::Document *m_doc;
+	GLuint m_frameBuffer;
+	GLuint m_stencilBuffer;
+	bool m_init;
+	struct NVGcontext *m_vg;
+	float m_lastMouseX, m_lastMouseY;
+	bool m_isStroking;
+};
+
+class DocumentArea : public UiMouseAwareElement {
+public:
+	DocumentArea()
+		: UiMouseAwareElement()
+		, m_doc(NULL)
+		, m_drawingArea(NULL)
 		, m_isResizingWidth(false)
 		, m_isResizingHeight(false)
 		, m_mouseX(0)
 		, m_mouseY(0)
-	{}
+	{
+		m_drawingArea = new DrawingArea();
+	}
+
+	~DocumentArea() {
+		if (NULL != m_drawingArea) {
+			delete m_drawingArea;
+		}
+	}
 
 	Document * Document() const { return m_doc; }
-	void SetDocument(::Document *doc) { m_doc = doc; }
+	void SetDocument(::Document *doc) {
+		m_doc = doc;
+		if (NULL != m_drawingArea) {
+			m_drawingArea->SetDocument(doc);
+		}
+	}
+
+	struct NVGcontext* StrokeEngine() { return m_drawingArea == NULL ? NULL : m_drawingArea->StrokeEngine(); }
+	void SetStrokeEngine(struct NVGcontext* vg) {
+		if (NULL != m_drawingArea) {
+			m_drawingArea->SetStrokeEngine(vg);
+		}
+	}
 
 public: // protected
 	void OnMouseOver(int x, int y) override {
@@ -467,31 +643,32 @@ public: // protected
 			float drawingHeight = m_startDeltaY + m_mouseY;
 			Document()->height = drawingHeight / ed->zoom;
 		}
+		if (m_isResizingWidth || m_isResizingHeight) {
+			Update();
+		}
+		else {
+			if (m_drawingArea->Rect().Contains(x, y)) {
+				m_drawingArea->OnMouseOver(x, y);
+			}
+		}
 	}
 
 	void OnMouseClick(int button, int action, int mods) override {
-		std::cout << "PaintArea::OnMouseClick()" << std::endl;
 		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-			std::cout << "press mouse left" << std::endl;
-			const ::Rect & r = Rect();
 			float drawingWidth = Document()->width * ed->zoom;
 			float drawingHeight = Document()->height * ed->zoom;
 
-			::Rect widthHandle(r.x + 5 + drawingWidth, r.y + 5 + floor((drawingHeight - 5) / 2.), 5, 5);
-			if (widthHandle.Contains(m_mouseX, m_mouseY)) {
-				std::cout << "widthHandle contains mouse" << std::endl;
+			if (m_widthHandle.Contains(m_mouseX, m_mouseY)) {
 				m_isResizingWidth = true;
 				m_startDeltaX = drawingWidth - m_mouseX;
 			}
 
-			::Rect heightHandle(r.x + 5 + floor((drawingWidth - 5) / 2.), r.y + 5 + drawingHeight, 5, 5);
-			if (heightHandle.Contains(m_mouseX, m_mouseY)) {
+			if (m_heightHandle.Contains(m_mouseX, m_mouseY)) {
 				m_isResizingHeight = true;
 				m_startDeltaY = drawingHeight - m_mouseY;
 			}
 
-			::Rect bothHandle(r.x + 5 + drawingWidth, r.y + 5 + drawingHeight, 5, 5);
-			if (bothHandle.Contains(m_mouseX, m_mouseY)) {
+			if (m_bothHandle.Contains(m_mouseX, m_mouseY)) {
 				m_isResizingWidth = true;
 				m_isResizingHeight = true;
 				m_startDeltaX = drawingWidth - m_mouseX;
@@ -503,6 +680,34 @@ public: // protected
 			m_isResizingWidth = false;
 			m_isResizingHeight = false;
 		}
+
+		if (m_drawingArea->Rect().Contains(m_mouseX, m_mouseY)) {
+			m_drawingArea->OnMouseClick(button, action, mods);
+		}
+	}
+
+	void OnMouseEnter() override {
+		if (m_drawingArea->Rect().Contains(m_mouseX, m_mouseY)) {
+			m_drawingArea->OnMouseEnter();
+		}
+	}
+
+	void OnMouseLeave() override {
+		if (m_drawingArea->Rect().Contains(m_mouseX, m_mouseY)) {
+			m_drawingArea->OnMouseLeave();
+		}
+	}
+
+	void Update() override {
+		const ::Rect & r = Rect();
+		float drawingWidth = Document()->width * ed->zoom;
+		float drawingHeight = Document()->height * ed->zoom;
+
+		m_widthHandle = ::Rect(r.x + 5 + drawingWidth, r.y + 5 + floor((drawingHeight - 5) / 2.), 5, 5);
+		m_heightHandle = ::Rect(r.x + 5 + floor((drawingWidth - 5) / 2.), r.y + 5 + drawingHeight, 5, 5);
+		m_bothHandle = ::Rect(r.x + 5 + drawingWidth, r.y + 5 + drawingHeight, 5, 5);
+
+		m_drawingArea->SetRect(r.x + 5, r.y + 5, drawingWidth, drawingHeight);
 	}
 
 	void Paint(NVGcontext *vg) const override {
@@ -525,48 +730,32 @@ public: // protected
 			-5, 9, nvgRGBA(51, 96, 131, 30), nvgRGBA(0, 0, 0, 0)));
 		nvgFill(vg);
 
-		// Drawing
-		nvgBeginPath(vg);
-		nvgRect(vg, r.x + 5, r.y + 5, drawingWidth, drawingHeight);
-		nvgFillColor(vg, nvgRGB(255, 255, 255));
-		nvgFill(vg);
+		if (NULL != m_drawingArea) {
+			m_drawingArea->Paint(vg);
+		}
 
 		// Handles
-		nvgBeginPath(vg);
-		nvgRect(vg, r.x + 5 + drawingWidth, r.y + 5 + drawingHeight, 5, 5);
-		nvgFillColor(vg, nvgRGB(255, 255, 255));
-		nvgFill(vg);
-		nvgBeginPath(vg);
-		nvgRect(vg, r.x + 5 + drawingWidth + 0.5, r.y + 5 + drawingHeight + 0.5, 4, 4);
-		nvgStrokeColor(vg, nvgRGB(85, 85, 85));
-		nvgStroke(vg);
-
-		nvgBeginPath(vg);
-		nvgRect(vg, r.x + 5 + drawingWidth, r.y + 5 + floor((drawingHeight - 5) / 2.), 5, 5);
-		nvgFillColor(vg, nvgRGB(255, 255, 255));
-		nvgFill(vg);
-		nvgBeginPath(vg);
-		nvgRect(vg, r.x + 5 + drawingWidth + 0.5, r.y + 5 + floor((drawingHeight - 5) / 2.) + 0.5, 4, 4);
-		nvgStrokeColor(vg, nvgRGB(85, 85, 85));
-		nvgStroke(vg);
-
-		nvgBeginPath(vg);
-		nvgRect(vg, r.x + 5 + floor((drawingWidth - 5) / 2.), r.y + 5 + drawingHeight, 5, 5);
-		nvgFillColor(vg, nvgRGB(255, 255, 255));
-		nvgFill(vg);
-		nvgBeginPath(vg);
-		nvgRect(vg, r.x + 5 + floor((drawingWidth - 5) / 2.) + 0.5, r.y + 5 + drawingHeight + 0.5, 4, 4);
-		nvgStrokeColor(vg, nvgRGB(85, 85, 85));
-		nvgStroke(vg);
+		for (const ::Rect & handle : { m_widthHandle , m_heightHandle , m_bothHandle }) {
+			nvgBeginPath(vg);
+			nvgRect(vg, handle.x, handle.y, handle.w, handle.h);
+			nvgFillColor(vg, nvgRGB(255, 255, 255));
+			nvgFill(vg);
+			nvgBeginPath(vg);
+			nvgRect(vg, handle.x + 0.5, handle.y + 0.5, handle.w - 1, handle.h - 1);
+			nvgStrokeColor(vg, nvgRGB(85, 85, 85));
+			nvgStroke(vg);
+		}
 
 		nvgResetScissor(vg);
 	}
 
 private:
 	::Document *m_doc;
+	DrawingArea *m_drawingArea;
 	bool m_isResizingWidth, m_isResizingHeight;
 	int m_mouseX, m_mouseY;
 	float m_startDeltaX, m_startDeltaY;
+	::Rect m_widthHandle, m_heightHandle, m_bothHandle;
 };
 
 
@@ -713,6 +902,7 @@ int main()
 	Document *doc = new Document();
 	doc->width = 254;
 	doc->height = 280;
+	doc->CreateImage(vg, 1024, 1024); // TODO: make this size dynamic
 
 	VBoxLayout *layout = new VBoxLayout();
 	window.SetContent(layout);
@@ -771,8 +961,9 @@ int main()
 	shelf->SetSizeHint(0, 0, 0, 92);
 	layout->AddItem(shelf);
 
-	PaintArea *paintArea = new PaintArea();
+	DocumentArea *paintArea = new DocumentArea();
 	paintArea->SetDocument(doc);
+	paintArea->SetStrokeEngine(vg);
 	layout->AddItem(paintArea);
 
 	StatusBar *statusBar = new StatusBar();
