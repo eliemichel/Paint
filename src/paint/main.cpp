@@ -80,6 +80,52 @@ public:
 		}
 	}
 
+	void Resize(int w, int h) {
+		if (m_img == -1) {
+			return;
+		}
+
+		// Get old image data through a framebuffer
+		GLuint tex = nvglImageHandleGLES3(m_vg, m_img);
+		unsigned char* oldData = new unsigned char[m_width * m_height * 4];
+		
+		GLuint fbo;
+		glGenFramebuffers(1, &fbo);
+		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+		glBindTexture(GL_TEXTURE_2D, tex);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+
+		glReadPixels(0, 0, m_width, m_height, GL_RGBA, GL_UNSIGNED_BYTE, oldData);
+
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glDeleteFramebuffers(1, &fbo);
+
+		// Copy from old to new data
+		unsigned char* data = new unsigned char[w * h * 4];
+		for (size_t j = 0; j < h; ++j) {
+			for (size_t i = 0; i < w; ++i) {
+				if (i < m_width && j < m_height) {
+					for (size_t k = 0; k < 4; ++k) {
+						data[(j * w + i) * 4 + k] = oldData[(j * m_width + i) * 4 + k];
+					}
+				}
+				else {
+					for (size_t k = 0; k < 4; ++k) {
+						data[(j * w + i) * 4 + k] = 255;
+					}
+				}
+			}
+		}
+
+		delete[] oldData;
+		
+		nvgDeleteImage(m_vg, m_img);
+		m_img = nvgCreateImageRGBA(m_vg, w, h, NVG_IMAGE_NEAREST, data);
+		delete[] data;
+		m_width = w;
+		m_height = h;
+	}
+
 	void Paint(float x, float y, float w = -1, float h = -1) const {
 		if (NULL != m_vg && m_img > -1) {
 			nvgBeginPath(m_vg);
@@ -100,14 +146,25 @@ private:
 /**
  * Document properties
  */
-struct Document {
-	int width, height;
-
-	Image img;
-
+class Document {
+public:
 	void CreateImage(NVGcontext* vg, int w, int h) {
-		img.Create(vg, w, h);
+		m_img.Create(vg, w, h);
 	}
+
+	const Image & Img() const { return m_img; }
+
+	int Width() const { return m_width; }
+	int Height() const { return m_height; }
+	void SetSize(int w, int h) {
+		m_width = w;
+		m_height = h;
+		m_img.Resize(w, h);
+	}
+
+private:
+	int m_width, m_height;
+	Image m_img;
 };
 
 /**
@@ -518,31 +575,41 @@ public: // protected
 		nvgFill(vg);
 
 		if (NULL != Document()) {
-			Document()->img.Paint(r.x, r.y, r.w, r.h);
+			Document()->Img().Paint(r.x, r.y, r.w, r.h);
 		}
 	}
 
+	void Update() override {
+		UpdateStrokeEngine();
+	}
+
 private:
-	/// That's dirty...
 	void InitStrokeEngine() {
 		if (!Document()) {
 			return;
 		}
 		// Stencil buffer
+		UpdateStrokeEngine();
+		m_init = true;
+	}
+
+	void UpdateStrokeEngine() {
 		glGenFramebuffers(1, &m_frameBuffer);
 		glBindFramebuffer(GL_FRAMEBUFFER, m_frameBuffer);
 
-		GLuint tex = nvglImageHandleGLES3(m_vg, Document()->img.Handle());
+		GLuint tex = nvglImageHandleGLES3(m_vg, Document()->Img().Handle());
 		glBindTexture(GL_TEXTURE_2D, tex);
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
 
+		if (m_init) {
+			glDeleteRenderbuffers(1, &m_stencilBuffer);
+		}
 		glGenRenderbuffers(1, &m_stencilBuffer);
 		glBindRenderbuffer(GL_RENDERBUFFER, m_stencilBuffer);
-		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, 1024, 1024);
+		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, Document()->Width(), Document()->Height());
 		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, m_stencilBuffer);
 
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		m_init = true;
 	}
 
 	void Stroke(float startX, float startY, float endX, float endY) {
@@ -636,17 +703,12 @@ public: // protected
 		m_mouseY = y;
 
 		if (m_isResizingWidth) {
-			float drawingWidth = m_startDeltaX + m_mouseX;
-			Document()->width = drawingWidth / ed->zoom;
+			m_rubberBand.w = m_startDeltaX + m_mouseX;
 		}
 		if (m_isResizingHeight) {
-			float drawingHeight = m_startDeltaY + m_mouseY;
-			Document()->height = drawingHeight / ed->zoom;
+			m_rubberBand.h = m_startDeltaY + m_mouseY;
 		}
-		if (m_isResizingWidth || m_isResizingHeight) {
-			Update();
-		}
-		else {
+		if (!(m_isResizingWidth || m_isResizingHeight)) {
 			if (m_drawingArea->Rect().Contains(x, y)) {
 				m_drawingArea->OnMouseOver(x, y);
 			}
@@ -655,8 +717,8 @@ public: // protected
 
 	void OnMouseClick(int button, int action, int mods) override {
 		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-			float drawingWidth = Document()->width * ed->zoom;
-			float drawingHeight = Document()->height * ed->zoom;
+			float drawingWidth = Document()->Width() * ed->zoom;
+			float drawingHeight = Document()->Height() * ed->zoom;
 
 			if (m_widthHandle.Contains(m_mouseX, m_mouseY)) {
 				m_isResizingWidth = true;
@@ -674,9 +736,21 @@ public: // protected
 				m_startDeltaX = drawingWidth - m_mouseX;
 				m_startDeltaY = drawingHeight - m_mouseY;
 			}
+
+			if (m_isResizingWidth || m_isResizingHeight) {
+				if (NULL != m_drawingArea) {
+					m_rubberBand = m_drawingArea->Rect();
+				}
+			}
 		}
 
 		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE) {
+			if (m_isResizingWidth || m_isResizingHeight) {
+				Document()->SetSize(m_rubberBand.w / ed->zoom, m_rubberBand.h / ed->zoom);
+
+				Update();
+			}
+
 			m_isResizingWidth = false;
 			m_isResizingHeight = false;
 		}
@@ -700,8 +774,8 @@ public: // protected
 
 	void Update() override {
 		const ::Rect & r = Rect();
-		float drawingWidth = Document()->width * ed->zoom;
-		float drawingHeight = Document()->height * ed->zoom;
+		float drawingWidth = Document()->Width() * ed->zoom;
+		float drawingHeight = Document()->Height() * ed->zoom;
 
 		m_widthHandle = ::Rect(r.x + 5 + drawingWidth, r.y + 5 + floor((drawingHeight - 5) / 2.), 5, 5);
 		m_heightHandle = ::Rect(r.x + 5 + floor((drawingWidth - 5) / 2.), r.y + 5 + drawingHeight, 5, 5);
@@ -712,8 +786,8 @@ public: // protected
 
 	void Paint(NVGcontext *vg) const override {
 		const ::Rect & r = Rect();
-		float drawingWidth = Document()->width * ed->zoom;
-		float drawingHeight = Document()->height * ed->zoom;
+		float drawingWidth = Document()->Width() * ed->zoom;
+		float drawingHeight = Document()->Height() * ed->zoom;
 
 		nvgScissor(vg, r.x, r.y, r.w, r.h);
 
@@ -746,6 +820,14 @@ public: // protected
 			nvgStroke(vg);
 		}
 
+		if (m_isResizingWidth || m_isResizingHeight) {
+			nvgBeginPath(vg);
+			nvgRect(vg, m_rubberBand.x + 0.5, m_rubberBand.y + 0.5, m_rubberBand.w - 1, m_rubberBand.h - 1);
+			nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 128));
+			//nvgStrokePaint(vg, NVGpaint paint);
+			nvgStroke(vg);
+		}
+
 		nvgResetScissor(vg);
 	}
 
@@ -756,6 +838,7 @@ private:
 	int m_mouseX, m_mouseY;
 	float m_startDeltaX, m_startDeltaY;
 	::Rect m_widthHandle, m_heightHandle, m_bothHandle;
+	::Rect m_rubberBand;
 };
 
 
@@ -900,9 +983,9 @@ int main()
 	//Editor *ed = new Editor(); // made global
 	ed = new Editor();
 	Document *doc = new Document();
-	doc->width = 254;
-	doc->height = 280;
-	doc->CreateImage(vg, 1024, 1024); // TODO: make this size dynamic
+	doc->CreateImage(vg, 1, 1);
+	doc->SetSize(254, 280);
+	
 
 	VBoxLayout *layout = new VBoxLayout();
 	window.SetContent(layout);
