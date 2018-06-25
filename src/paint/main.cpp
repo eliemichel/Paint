@@ -170,9 +170,20 @@ private:
 /**
  * Global editor state
  */
+enum Tool {
+	PencilTool,
+	FillTool,
+	TextTool,
+	EraseTool,
+	PickTool,
+	ZoomTool,
+	BrushTool,
+	SelectTool,
+};
 struct Editor {
 	float zoom;
 	NVGcolor foregroundColor;
+	Tool currentTool = BrushTool;
 
 	Editor()
 		: zoom(1.0f)
@@ -422,6 +433,73 @@ public: // protected
 
 private:
 	NVGcolor m_color;
+	bool m_isEnabled;
+	bool m_isMouseOver;
+};
+
+class ToolButton : public UiMouseAwareElement {
+public:
+	ToolButton()
+		: m_isEnabled(true)
+		, m_isMouseOver(false)
+	{}
+
+	const Tool & TargetTool() const { return m_targetTool; }
+	void SetTargetTool(const Tool & tool) { m_targetTool = tool; }
+
+	// TODO: manage memory
+	void SetImage(NVGcontext *vg, const std::string & path) { m_image = Image(vg, path); }
+
+	bool IsEnabled() const { return m_isEnabled; }
+	void SetEnabled(bool enabled) { m_isEnabled = enabled; }
+
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		const ::Rect & r = Rect();
+
+		// White border
+		if (m_isEnabled) {
+			/*
+			nvgBeginPath(vg);
+			nvgRect(vg, r.x, r.y, r.w, r.h);
+			nvgFillColor(vg, m_isMouseOver ? nvgRGB(203, 228, 253) : nvgRGB(255, 255, 255));
+			nvgFill(vg);
+			*/
+		}
+
+		// Main Border
+		nvgBeginPath(vg);
+		nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+		nvgStrokeColor(vg, m_isMouseOver && m_isEnabled ? nvgRGB(164, 206, 249) : nvgRGB(160, 160, 160));
+		nvgStroke(vg);
+
+		// Image
+		if (m_isEnabled) {
+			m_image.Paint(r.x + 1, r.y);
+			//nvgBeginPath(vg);
+			//nvgRect(vg, r.x + 2, r.y + 2, r.w - 4, r.h - 4);
+			//nvgFillColor(vg, Color());
+			//nvgFill(vg);
+		}
+	}
+
+	void OnMouseEnter() override {
+		m_isMouseOver = true;
+	}
+
+	void OnMouseLeave() override {
+		m_isMouseOver = false;
+	}
+
+	void OnMouseClick(int button, int action, int mods) override {
+		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+			ed->currentTool = TargetTool();
+		}
+	}
+
+private:
+	Tool m_targetTool;
+	Image m_image;
 	bool m_isEnabled;
 	bool m_isMouseOver;
 };
@@ -1006,13 +1084,48 @@ int main()
 
 	HBoxLayout *shelf = new HBoxLayout();
 	UiElement *hSpacer = new UiElement();
-	hSpacer->SetSizeHint(0, 0, 871, 0);
+	hSpacer->SetSizeHint(0, 0, 313, 0);
 	shelf->AddItem(hSpacer);
 
+	// Tools shelf
+	VBoxLayout *toolsShelf = new VBoxLayout();
+	toolsShelf->SetSizeHint(0, 0, 69, 0);
+	UiElement *vSpacer = new UiElement();
+	vSpacer->SetSizeHint(0, 0, 0, 12);
+	toolsShelf->AddItem(vSpacer);
+
+	GridLayout *toolsGrid = new GridLayout();
+	toolsGrid->SetRowCount(2);
+	toolsGrid->SetColCount(3);
+	toolsGrid->SetRowSpacing(7);
+	toolsGrid->SetColSpacing(0);
+
+	const Tool tools[] = {PencilTool, FillTool, TextTool, EraseTool, PickTool, ZoomTool};
+	for (size_t i = 0; i < 6; ++i) {
+		ToolButton *toolButton = new ToolButton();
+		toolButton->SetImage(vg, "images\\pencil21.png"); 
+		toolButton->SetTargetTool(tools[i]);
+		toolButton->SetEnabled(true);
+		toolsGrid->AddItem(toolButton);
+	}
+	
+	toolsShelf->AddItem(toolsGrid);
+
+	vSpacer = new UiElement();
+	vSpacer->SetSizeHint(Rect(0, 0, 0, 29));
+	toolsShelf->AddItem(vSpacer);
+
+	shelf->AddItem(toolsShelf);
+
+	hSpacer = new UiElement();
+	hSpacer->SetSizeHint(0, 0, 489, 0);
+	shelf->AddItem(hSpacer);
+
+	// Color shelf
 	VBoxLayout *colorShelf = new VBoxLayout();
-	UiElement *vSpacerTop = new UiElement();
-	vSpacerTop->SetSizeHint(0, 0, 0, 5);
-	colorShelf->AddItem(vSpacerTop);
+	vSpacer = new UiElement();
+	vSpacer->SetSizeHint(0, 0, 0, 5);
+	colorShelf->AddItem(vSpacer);
 
 	GridLayout *colorGrid = new GridLayout();
 	colorGrid->SetRowCount(3);
@@ -1035,9 +1148,9 @@ int main()
 	//colorGrid->SetSizeHint(Rect(0, 0, 218, 64));
 	colorShelf->AddItem(colorGrid);
 
-	UiElement *vSpacerBottom = new UiElement();
-	vSpacerBottom->SetSizeHint(Rect(0, 0, 0, 23));
-	colorShelf->AddItem(vSpacerBottom);
+	vSpacer= new UiElement();
+	vSpacer->SetSizeHint(Rect(0, 0, 0, 23));
+	colorShelf->AddItem(vSpacer);
 
 	colorShelf->SetSizeHint(0, 0, 218, 0);
 	shelf->AddItem(colorShelf);
