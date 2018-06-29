@@ -276,10 +276,35 @@ private:
 	int m_rowSpacing, m_colSpacing;
 };
 
+typedef enum {
+	ShrinkOverflow,
+	HideOverflow,
+} BoxLayoutOverflowBehavior;
 
 #define BUI_HBOX_IMPLEMENTATION
 #include "_BoxLayout.inc.h"
 #undef BUI_HBOX_IMPLEMENTATION
 #include "_BoxLayout.inc.h"
+
+class Label : public UiElement {
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		const ::Rect & r = Rect();
+		nvgTextAlign(vg, NVG_ALIGN_CENTER);
+		nvgFillColor(vg, Color());
+		nvgText(vg, r.x + r.w / 2.0, r.y + r.h - 6, Text().c_str(), NULL);
+	}
+
+	void SetText(const std::string & text) { m_text = text; }
+	const std::string & Text() const { return m_text; }
+
+	void SetColor(int r, int g, int b, int a = 255) { m_color = nvgRGBA(r, g, b, a); }
+	void SetColor(NVGcolor color) { m_color = color; }
+	const NVGcolor & Color() const { return m_color; }
+
+private:
+	std::string m_text;
+	NVGcolor m_color;
+};
 
 #endif // H_BASE_UI

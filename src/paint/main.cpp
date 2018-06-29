@@ -291,7 +291,7 @@ private:
 class HomeButton : public UiButton {
 public:
 	HomeButton() {
-		SetSizeHint(::Rect(0, 0, 65, 0));
+		SetSizeHint(::Rect(0, 0, 64, 0));
 		SetBackgroundColor(245, 246, 247);
 		SetTextColor(60, 60, 60);
 		SetBorderColor(218, 219, 220);
@@ -444,11 +444,20 @@ public:
 		, m_isMouseOver(false)
 	{}
 
+	~ToolButton() {
+		DeleteImage();
+	}
+
 	const Tool & TargetTool() const { return m_targetTool; }
 	void SetTargetTool(const Tool & tool) { m_targetTool = tool; }
 
-	// TODO: manage memory
-	void SetImage(NVGcontext *vg, const std::string & path) { m_image = Image(vg, path); }
+	void LoadImage(NVGcontext *vg, const std::string & path) {
+		m_image.Load(vg, path);
+	}
+	// Call this or destroy object before the NVG context gets freed
+	void DeleteImage() {
+		m_image.Delete();
+	}
 
 	bool IsEnabled() const { return m_isEnabled; }
 	void SetEnabled(bool enabled) { m_isEnabled = enabled; }
@@ -456,30 +465,25 @@ public:
 public: // protected
 	void Paint(NVGcontext *vg) const override {
 		const ::Rect & r = Rect();
+		bool isCurrent = ed->currentTool == TargetTool();
 
-		// White border
-		if (m_isEnabled) {
-			/*
+		if (isCurrent || m_isMouseOver) {
+			// Background
 			nvgBeginPath(vg);
-			nvgRect(vg, r.x, r.y, r.w, r.h);
-			nvgFillColor(vg, m_isMouseOver ? nvgRGB(203, 228, 253) : nvgRGB(255, 255, 255));
+			nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+			nvgFillColor(vg, isCurrent ? (m_isMouseOver ? nvgRGB(213, 230, 247) : nvgRGB(201, 224, 247)) : nvgRGB(232, 239, 247));
 			nvgFill(vg);
-			*/
 		}
 
-		// Main Border
-		nvgBeginPath(vg);
-		nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-		nvgStrokeColor(vg, m_isMouseOver && m_isEnabled ? nvgRGB(164, 206, 249) : nvgRGB(160, 160, 160));
-		nvgStroke(vg);
+		// TODO: Add alpha to images
+		m_image.Paint(r.x + 1, r.y);
 
-		// Image
-		if (m_isEnabled) {
-			m_image.Paint(r.x + 1, r.y);
-			//nvgBeginPath(vg);
-			//nvgRect(vg, r.x + 2, r.y + 2, r.w - 4, r.h - 4);
-			//nvgFillColor(vg, Color());
-			//nvgFill(vg);
+		if (isCurrent || m_isMouseOver) {
+			// Main Border
+			nvgBeginPath(vg);
+			nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+			nvgStrokeColor(vg, isCurrent  ? (m_isMouseOver ? nvgRGB(122, 176, 231) : nvgRGB(98, 162, 228)) : nvgRGB(164, 206, 249));
+			nvgStroke(vg);
 		}
 	}
 
@@ -919,6 +923,71 @@ private:
 	::Rect m_rubberBand;
 };
 
+class Shelf : public HBoxLayout {
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		const ::Rect & r = Rect();
+		HBoxLayout::Paint(vg);
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, r.x, r.y + r.h - 0.5);
+		nvgLineTo(vg, r.x + r.w, r.y + r.h - 0.5);
+		nvgStrokeColor(vg, nvgRGB(218, 219, 220));
+		nvgStroke(vg);
+	}
+};
+
+class ShelfSection : public VBoxLayout {
+public:
+	ShelfSection() : VBoxLayout() {
+		// TODO: Add built-in margins to ui elements instead of this hack
+		m_topSpacer = new UiElement();
+		m_topSpacer->SetSizeHint(0, 0, 0, 0);
+		AddItem(m_topSpacer);
+
+		UiElement *content = new UiElement();
+		AddItem(content);
+
+		m_label = new Label();
+		m_label->SetColor(90, 90, 90);
+		AddItem(m_label);
+	}
+
+	void SetContent(UiElement *content) {
+		RemoveItem();
+		UiElement *previousContent = RemoveItem();
+		if (NULL != previousContent) {
+			delete previousContent;
+		}
+		AddItem(content);
+		AddItem(m_label);
+	}
+
+	void SetMarginTop(int margin) { m_topSpacer->SetSizeHint(0, 0, 0, margin); }
+
+	void SetLabelText(const std::string & text) { m_label->SetText(text); }
+
+private:
+	UiElement * m_topSpacer;
+	Label * m_label;
+};
+
+/// Vertical lines between shelf sections
+class ShelfSeparator : public UiElement {
+public:
+	ShelfSeparator() : UiElement() {
+		SetSizeHint(0, 0, 1, 0);
+	}
+
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		const ::Rect & r = Rect();
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, r.x + 0.5, r.y + 2);
+		nvgLineTo(vg, r.x + 0.5, r.y + r.h - 4);
+		nvgStrokeColor(vg, nvgRGB(226, 227, 228));
+		nvgStroke(vg);
+	}
+};
 
 class UiWindow {
 public:
@@ -1082,52 +1151,98 @@ int main()
 	top->AddItem(rightButtonSpacer);
 	layout->AddItem(top);
 
-	HBoxLayout *shelf = new HBoxLayout();
-	UiElement *hSpacer = new UiElement();
-	hSpacer->SetSizeHint(0, 0, 313, 0);
-	shelf->AddItem(hSpacer);
+	// Shelf
+	Shelf *shelf = new Shelf();
+	shelf->SetOverflowBehavior(HideOverflow);
+
+	ShelfSection *clipboardShelf = new ShelfSection();
+	clipboardShelf->SetLabelText("Presse-papiers");
+	clipboardShelf->SetSizeHint(0, 0, 118, 0);
+	shelf->AddItem(clipboardShelf);
+
+	shelf->AddItem(new ShelfSeparator());
+
+	ShelfSection *imageShelf = new ShelfSection();
+	imageShelf->SetLabelText("Image");
+	imageShelf->SetSizeHint(0, 0, 189, 0);
+	shelf->AddItem(imageShelf);
+
+	shelf->AddItem(new ShelfSeparator());
 
 	// Tools shelf
-	VBoxLayout *toolsShelf = new VBoxLayout();
-	toolsShelf->SetSizeHint(0, 0, 69, 0);
-	UiElement *vSpacer = new UiElement();
-	vSpacer->SetSizeHint(0, 0, 0, 12);
-	toolsShelf->AddItem(vSpacer);
+	ShelfSection *toolsShelf = new ShelfSection();
+	toolsShelf->SetLabelText("Outils");
+	toolsShelf->SetMarginTop(12);
 
 	GridLayout *toolsGrid = new GridLayout();
+	toolsGrid->SetSizeHint(0, 0, 69, 51);
 	toolsGrid->SetRowCount(2);
 	toolsGrid->SetColCount(3);
 	toolsGrid->SetRowSpacing(7);
 	toolsGrid->SetColSpacing(0);
 
 	const Tool tools[] = {PencilTool, FillTool, TextTool, EraseTool, PickTool, ZoomTool};
+	const std::string filenames[] = {
+		"images\\pencil21.png",
+		"images\\fill21.png",
+		"images\\text21.png",
+		"images\\erase21.png",
+		"images\\picker21.png",
+		"images\\zoom21.png",
+	};
 	for (size_t i = 0; i < 6; ++i) {
 		ToolButton *toolButton = new ToolButton();
-		toolButton->SetImage(vg, "images\\pencil21.png"); 
+		toolButton->LoadImage(vg, filenames[i]); 
 		toolButton->SetTargetTool(tools[i]);
 		toolButton->SetEnabled(true);
 		toolsGrid->AddItem(toolButton);
 	}
 	
-	toolsShelf->AddItem(toolsGrid);
+	HBoxLayout *toolsWidgets = new HBoxLayout();
+	UiElement *spacer = new UiElement();
+	spacer->SetSizeHint(0, 0, 4, 0);
+	toolsWidgets->AddItem(spacer);
+	toolsWidgets->AddItem(toolsGrid);
+	spacer = new UiElement();
+	spacer->SetSizeHint(0, 0, 6, 0);
+	toolsWidgets->AddItem(spacer);
+	toolsWidgets->AutoSizeHint();
 
-	vSpacer = new UiElement();
-	vSpacer->SetSizeHint(Rect(0, 0, 0, 29));
-	toolsShelf->AddItem(vSpacer);
+	toolsShelf->SetContent(toolsWidgets);
+	toolsShelf->AutoSizeHint();
 
 	shelf->AddItem(toolsShelf);
 
-	hSpacer = new UiElement();
-	hSpacer->SetSizeHint(0, 0, 489, 0);
-	shelf->AddItem(hSpacer);
+	shelf->AddItem(new ShelfSeparator());
+
+	ShelfSection *brushesShelf = new ShelfSection();
+	brushesShelf->SetLabelText("<Brushes>");
+	brushesShelf->SetSizeHint(0, 0, 60, 0);
+	shelf->AddItem(brushesShelf);
+
+	shelf->AddItem(new ShelfSeparator());
+
+	ShelfSection *shapeShelf = new ShelfSection();
+	shapeShelf->SetLabelText("Formes");
+	shapeShelf->SetSizeHint(0, 0, 270, 0);
+	shelf->AddItem(shapeShelf);
+
+	shelf->AddItem(new ShelfSeparator());
+
+	ShelfSection *sizeShelf = new ShelfSection();
+	sizeShelf->SetLabelText("<Size>");
+	sizeShelf->SetSizeHint(0, 0, 52, 0);
+	shelf->AddItem(sizeShelf);
+
+	shelf->AddItem(new ShelfSeparator());
 
 	// Color shelf
-	VBoxLayout *colorShelf = new VBoxLayout();
-	vSpacer = new UiElement();
-	vSpacer->SetSizeHint(0, 0, 0, 5);
-	colorShelf->AddItem(vSpacer);
+	ShelfSection *colorShelf = new ShelfSection();
+	colorShelf->SetLabelText("Couleurs");
+	colorShelf->SetMarginTop(5);
 
 	GridLayout *colorGrid = new GridLayout();
+	colorGrid->SetSizeHint(0, 0, 218, 64);
 	colorGrid->SetRowCount(3);
 	colorGrid->SetColCount(10);
 	colorGrid->SetRowSpacing(2);
@@ -1145,15 +1260,30 @@ int main()
 		colorGrid->AddItem(colorButton);
 	}
 
-	//colorGrid->SetSizeHint(Rect(0, 0, 218, 64));
-	colorShelf->AddItem(colorGrid);
+	HBoxLayout *colorWidgets = new HBoxLayout();
+	spacer = new UiElement();
+	spacer->SetSizeHint(0, 0, 97, 0);
+	colorWidgets->AddItem(spacer);
+	colorWidgets->AddItem(colorGrid);
+	spacer = new UiElement();
+	spacer->SetSizeHint(0, 0, 73, 0);
+	colorWidgets->AddItem(spacer);
+	colorWidgets->AutoSizeHint();
 
-	vSpacer= new UiElement();
-	vSpacer->SetSizeHint(Rect(0, 0, 0, 23));
-	colorShelf->AddItem(vSpacer);
+	colorShelf->SetContent(colorWidgets);
+	colorShelf->AutoSizeHint();
 
-	colorShelf->SetSizeHint(0, 0, 218, 0);
 	shelf->AddItem(colorShelf);
+
+	shelf->AddItem(new ShelfSeparator());
+
+	ShelfSection *paint3dShelf = new ShelfSection();
+	paint3dShelf->SetLabelText("<Paint3D>");
+	paint3dShelf->SetSizeHint(0, 0, 58, 0);
+	shelf->AddItem(paint3dShelf);
+
+	shelf->AddItem(new ShelfSeparator());
+
 	shelf->SetSizeHint(0, 0, 0, 92);
 	layout->AddItem(shelf);
 
@@ -1176,13 +1306,6 @@ int main()
 	Image resizeImg(vg, "images\\resize18.png");
 	Image rotateImg(vg, "images\\rotate18.png");
 
-	Image pencilImg(vg, "images\\pencil21.png");
-	Image fillImg(vg, "images\\fill21.png");
-	Image textImg(vg, "images\\text21.png");
-	Image eraseImg(vg, "images\\erase21.png");
-	Image pickerImg(vg, "images\\picker21.png");
-	Image zoomImg(vg, "images\\zoom21.png");
-
 	int font = nvgCreateFont(vg, "SegeoUI", (shareDir + "fonts\\segoeui.ttf").c_str());
 
 	// Main loop
@@ -1201,37 +1324,6 @@ int main()
 		nvgFillColor(vg, nvgRGBA(245, 246, 247, 255));
 		nvgFill(vg);
 
-		nvgBeginPath(vg);
-		nvgMoveTo(vg, 0, 23.5);
-		nvgLineTo(vg, 56.5, 23.5);
-		nvgLineTo(vg, 56.5, 0.5);
-		nvgLineTo(vg, 56 + 64.5, 0.5);
-		nvgLineTo(vg, 56 + 64.5, 23.5);
-		nvgLineTo(vg, winWidth, 23.5);
-		nvgStrokeColor(vg, nvgRGBA(218, 219, 220, 255));
-		nvgStroke(vg);
-
-		nvgBeginPath(vg);
-		nvgMoveTo(vg, 0, 24 + 129.5);
-		nvgLineTo(vg, winWidth, 24 + 129.5);
-		nvgStrokeColor(vg, nvgRGBA(218, 219, 220, 255));
-		nvgStroke(vg);
-
-		float shelf_delim_pos[] = { 118, 308, 388, 448, 720, 773, 1162, 1221 };
-		for (int i = 0; i < 8; ++i) {
-			nvgBeginPath(vg);
-			nvgMoveTo(vg, shelf_delim_pos[i] + 0.5, 24 + 2);
-			nvgLineTo(vg, shelf_delim_pos[i] + 0.5, 24 + 88);
-			nvgStrokeColor(vg, nvgRGBA(226, 227, 228, 255));
-			nvgStroke(vg);
-		}
-
-		nvgBeginPath(vg);
-		nvgMoveTo(vg, 0, 159.5);
-		nvgLineTo(vg, winWidth, 159.5);
-		nvgStrokeColor(vg, nvgRGB(218, 219, 220));
-		nvgStroke(vg);
-
 		// // Shelf images
 		// Clipboard
 		pasteOffImg.Paint(11, 24 + 6);
@@ -1247,10 +1339,6 @@ int main()
 		nvgFillColor(vg, nvgRGBA(60, 60, 60, 255));
 		nvgText(vg, 12 + 15, 77, "Coller", NULL);
 
-		nvgTextAlign(vg, NVG_ALIGN_CENTER);
-		nvgFillColor(vg, nvgRGBA(90, 90, 90, 255));
-		nvgText(vg, 59, 110, "Presse-papiers", NULL);
-		
 		// Image
 		selectImg.Paint(141, 24 + 7);
 		cropOffImg.Paint(194, 24 + 5);
@@ -1273,22 +1361,6 @@ int main()
 		nvgFillColor(vg, nvgRGBA(60, 60, 60, 255));
 		nvgText(vg, 214, 87, "Faire pivoter", NULL);
 
-		nvgTextAlign(vg, NVG_ALIGN_CENTER);
-		nvgFillColor(vg, nvgRGBA(90, 90, 90, 255));
-		nvgText(vg, 119 + 95, 110, "Image", NULL);
-
-		// Tools
-		pencilImg.Paint(309 + 6, 24 + 13);
-		fillImg.Paint(309 + 6 + 23, 24 + 13);
-		textImg.Paint(309 + 6 + 23 * 2, 24 + 13);
-		eraseImg.Paint(309 + 6, 24 + 13 + 23);
-		pickerImg.Paint(309 + 6 + 23, 24 + 13 + 23);
-		zoomImg.Paint(309 + 6 + 23 * 2, 24 + 13 + 23);
-
-		nvgTextAlign(vg, NVG_ALIGN_CENTER);
-		nvgFillColor(vg, nvgRGBA(90, 90, 90, 255));
-		nvgText(vg, 309 + 40, 110, "Outils", NULL);
-
 		// Paint
 		nvgTextAlign(vg, NVG_ALIGN_CENTER);
 		nvgFillColor(vg, nvgRGBA(60, 60, 60, 255));
@@ -1302,10 +1374,6 @@ int main()
 		nvgTextAlign(vg, NVG_ALIGN_LEFT);
 		nvgFillColor(vg, nvgRGBA(141, 141, 141, 255));
 		nvgText(vg, 637, 65, "Remplissage", NULL);
-
-		nvgTextAlign(vg, NVG_ALIGN_CENTER);
-		nvgFillColor(vg, nvgRGBA(90, 90, 90, 255));
-		nvgText(vg, 449 + 135, 110, "Formes", NULL);
 
 		// Colors
 		// // Front Color
@@ -1350,19 +1418,10 @@ int main()
 		nvgFillColor(vg, nvgRGBA(60, 60, 60, 255));
 		nvgTextBox(vg, 774 + 52, 24 + 53, 42, "Couleur 2", NULL);
 
-		nvgTextAlign(vg, NVG_ALIGN_CENTER);
-		nvgFillColor(vg, nvgRGBA(90, 90, 90, 255));
-		nvgText(vg, 773 + 194, 110, "Couleurs", NULL);
-
 		// Size
 		nvgTextAlign(vg, NVG_ALIGN_CENTER);
 		nvgFillColor(vg, nvgRGBA(90, 90, 90, 255));
 		nvgText(vg, 722 + 25, 77, "Taille", NULL);
-
-		// // Paint Area
-		
-
-		// Status Bar
 
 		window.EndRender();
 
@@ -1377,13 +1436,6 @@ int main()
 	cropOffImg.Delete();
 	resizeImg.Delete();
 	rotateImg.Delete();
-
-	pencilImg.Delete();
-	fillImg.Delete();
-	textImg.Delete();
-	eraseImg.Delete();
-	pickerImg.Delete();
-	zoomImg.Delete();
 
 	// Delete document
 	delete ed;

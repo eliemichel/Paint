@@ -18,10 +18,54 @@
 
 class _BoxLayout : public UiLayout {
 public:
-	
+	_BoxLayout()
+		: UiLayout()
+		, m_overflowBehavior(ShrinkOverflow)
+	{}
+
+	void SetOverflowBehavior(BoxLayoutOverflowBehavior behavior) { m_overflowBehavior = behavior; }
+	BoxLayoutOverflowBehavior OverflowBehavior() const { return m_overflowBehavior; }
+
 	/// Take ownership of the item
 	void AddItem(UiElement *item) {
 		Items().push_back(item);
+	}
+	/// Hand ownership of the item
+	UiElement *RemoveItem() {
+		if (Items().size() == 0) {
+			return NULL;
+		}
+		UiElement *item = Items().back();
+		Items().pop_back();
+		return item;
+	}
+
+	/// Automatically infer size hint from content.
+	void AutoSizeHint() {
+		int sum = 0;
+		int max = 0;
+		for (auto item : Items()) {
+			const ::Rect & rect = item->SizeHint();
+#ifdef BUI_HBOX_IMPLEMENTATION
+			sum += rect.w;
+			max = std::max(max, rect.h);
+#else
+			sum += rect.h;
+			max = std::max(max, rect.w);
+#endif
+			/* TODO: design issue: unable to determine whether a null size is a forced null size or a not hinted size
+			if (rect.IsNull()) {
+				SetSizeHint(::Rect());
+				return;
+			}
+			*/
+		}
+
+#ifdef BUI_HBOX_IMPLEMENTATION
+		SetSizeHint(0, 0, sum, max);
+#else
+		SetSizeHint(0, 0, max, sum);
+#endif
 	}
 
 public:
@@ -60,6 +104,11 @@ public:
 		int hintedItemHeightDelta = nonNullHints == 0 ? 0 : std::min((int)floor(remainingHeight / nonNullHints), 0);
 		// The last height might be a bit different to prevent rounding issues
 		int lastHintedItemHeightDelta = -std::max(0, -remainingHeight) + (nonNullHints - 1) * hintedItemHeightDelta;
+
+		if (m_overflowBehavior == BoxLayoutOverflowBehavior::HideOverflow) {
+			hintedItemHeightDelta = 0;
+			lastHintedItemHeightDelta = 0;
+		}
 
 		int offset = 0;
 		int nullCount = 0;
@@ -114,4 +163,7 @@ protected:
 
 		return false;
 	}
+
+private:
+	BoxLayoutOverflowBehavior m_overflowBehavior;
 };
