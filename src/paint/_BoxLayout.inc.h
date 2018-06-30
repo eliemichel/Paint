@@ -62,9 +62,9 @@ public:
 		}
 
 #ifdef BUI_HBOX_IMPLEMENTATION
-		SetSizeHint(0, 0, sum, max);
+		SetInnerSizeHint(0, 0, sum, max);
 #else
-		SetSizeHint(0, 0, max, sum);
+		SetInnerSizeHint(0, 0, max, sum);
 #endif
 	}
 

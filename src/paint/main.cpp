@@ -947,11 +947,6 @@ public: // protected
 class ShelfSection : public VBoxLayout {
 public:
 	ShelfSection() : VBoxLayout() {
-		// TODO: Add built-in margins to ui elements instead of this hack
-		m_topSpacer = new UiElement();
-		m_topSpacer->SetSizeHint(0, 0, 0, 0);
-		AddItem(m_topSpacer);
-
 		UiElement *content = new UiElement();
 		AddItem(content);
 
@@ -970,12 +965,9 @@ public:
 		AddItem(m_label);
 	}
 
-	void SetMarginTop(int margin) { m_topSpacer->SetSizeHint(0, 0, 0, margin); }
-
 	void SetLabelText(const std::string & text) { m_label->SetText(text); }
 
 private:
-	UiElement * m_topSpacer;
 	Label * m_label;
 };
 
@@ -1070,24 +1062,22 @@ private:
 	std::string m_text;
 };
 
-class SizeShelfButton : public UiMouseAwareElement {
+class ImageShelfButton : public UiMouseAwareElement {
 public:
-	SizeShelfButton()
+	ImageShelfButton()
 		: m_isMouseOver(false)
 	{}
 
-	~SizeShelfButton() {
+	~ImageShelfButton() {
 		DeleteImages();
 	}
 
-	void LoadImages(NVGcontext *vg, const std::string & path, const std::string & arrowPath) {
+	void LoadImage(NVGcontext *vg, const std::string & path) {
 		m_image.Load(vg, path);
-		m_arrowImage.Load(vg, arrowPath);
 	}
 	// Call this or destroy object before the NVG context gets freed
 	void DeleteImages() {
 		m_image.Delete();
-		m_arrowImage.Delete();
 	}
 
 	void SetText(const std::string & text) { m_text = text; }
@@ -1104,18 +1094,14 @@ public: // protected
 			nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
 			nvgFillColor(vg, isCurrent ? (m_isMouseOver ? nvgRGB(213, 230, 247) : nvgRGB(201, 224, 247)) : nvgRGB(232, 239, 247));
 			nvgFill(vg);
-		}
-
-		m_image.Paint(r.x + (r.w - m_image.Width()) / 2, r.y + 3);
-		m_arrowImage.Paint(r.x + (r.w - m_arrowImage.Width()) / 2, r.y + r.h - 3 - m_arrowImage.Height());
-
-		if (isCurrent || m_isMouseOver) {
 			// Main Border
 			nvgBeginPath(vg);
 			nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
 			nvgStrokeColor(vg, isCurrent ? (m_isMouseOver ? nvgRGB(122, 176, 231) : nvgRGB(98, 162, 228)) : nvgRGB(164, 206, 249));
 			nvgStroke(vg);
 		}
+
+		m_image.Paint(r.x + (r.w - m_image.Width()) / 2, r.y + 3);
 
 		// Label
 		nvgTextAlign(vg, NVG_ALIGN_CENTER);
@@ -1139,9 +1125,38 @@ public: // protected
 	}
 
 private:
-	Image m_image, m_arrowImage;
+	Image m_image;
 	bool m_isMouseOver;
 	std::string m_text;
+};
+
+class SizeShelfButton : public ImageShelfButton {
+public:
+	~SizeShelfButton() {
+		DeleteArrowImage();
+	}
+
+	void LoadArrowImage(NVGcontext *vg, const std::string & path) {
+		m_arrowImage.Load(vg, path);
+	}
+	void LoadImages(NVGcontext *vg, const std::string & path, const std::string & arrowPath) {
+		LoadImage(vg, path);
+		LoadArrowImage(vg, arrowPath);
+	}
+	// Call this or destroy object before the NVG context gets freed
+	void DeleteArrowImage() {
+		m_arrowImage.Delete();
+	}
+
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		ImageShelfButton::Paint(vg);
+		const ::Rect & r = InnerRect();
+		m_arrowImage.Paint(r.x + (r.w - m_arrowImage.Width()) / 2, r.y + r.h - 3 - m_arrowImage.Height());
+	}
+
+private:
+	Image m_arrowImage;
 };
 
 class UiWindow {
@@ -1312,14 +1327,27 @@ int main()
 
 	ShelfSection *clipboardShelf = new ShelfSection();
 	clipboardShelf->SetLabelText("Presse-papiers");
-	clipboardShelf->SetSizeHint(0, 0, 118, 0);
+	SizeShelfButton *pasteButton = new SizeShelfButton();
+	pasteButton->SetMargin(6, 4, 70, 0);
+	pasteButton->SetInnerSizeHint(0, 0, 42, 66);
+	pasteButton->LoadImages(vg, "images\\pasteOff32.png", "images\\arrow8.png");
+	pasteButton->SetText("Coller");
+	clipboardShelf->SetContent(pasteButton);
+	clipboardShelf->AutoSizeHint();
 	shelf->AddItem(clipboardShelf);
 
 	shelf->AddItem(new ShelfSeparator());
 
 	ShelfSection *imageShelf = new ShelfSection();
 	imageShelf->SetLabelText("Image");
-	imageShelf->SetSizeHint(0, 0, 189, 0);
+	SizeShelfButton *selectButton = new SizeShelfButton();
+	selectButton->SetMargin(4, 4, 6 + 111, 0);
+	selectButton->SetInnerSizeHint(0, 0, 68, 66);
+	selectButton->LoadImages(vg, "images\\select32.png", "images\\arrow8.png");
+	selectButton->SetText(u8"Sélectionner");
+	imageShelf->SetContent(selectButton);
+	imageShelf->AutoSizeHint();
+
 	shelf->AddItem(imageShelf);
 
 	shelf->AddItem(new ShelfSeparator());
@@ -1327,10 +1355,11 @@ int main()
 	// Tools shelf
 	ShelfSection *toolsShelf = new ShelfSection();
 	toolsShelf->SetLabelText("Outils");
-	toolsShelf->SetMarginTop(12);
+	toolsShelf->SetMargin(0, 12, 0, 0);
 
 	GridLayout *toolsGrid = new GridLayout();
-	toolsGrid->SetSizeHint(0, 0, 69, 51);
+	toolsGrid->SetMargin(4, 0, 6, 0);
+	toolsGrid->SetInnerSizeHint(0, 0, 69, 51);
 	toolsGrid->SetRowCount(2);
 	toolsGrid->SetColCount(3);
 	toolsGrid->SetRowSpacing(7);
@@ -1353,17 +1382,7 @@ int main()
 		toolsGrid->AddItem(toolButton);
 	}
 	
-	HBoxLayout *toolsWidgets = new HBoxLayout();
-	UiElement *spacer = new UiElement();
-	spacer->SetSizeHint(0, 0, 4, 0);
-	toolsWidgets->AddItem(spacer);
-	toolsWidgets->AddItem(toolsGrid);
-	spacer = new UiElement();
-	spacer->SetSizeHint(0, 0, 6, 0);
-	toolsWidgets->AddItem(spacer);
-	toolsWidgets->AutoSizeHint();
-
-	toolsShelf->SetContent(toolsWidgets);
+	toolsShelf->SetContent(toolsGrid);
 	toolsShelf->AutoSizeHint();
 
 	shelf->AddItem(toolsShelf);
@@ -1371,8 +1390,13 @@ int main()
 	shelf->AddItem(new ShelfSeparator());
 
 	ShelfSection *brushesShelf = new ShelfSection();
-	brushesShelf->SetLabelText("<Brushes>");
-	brushesShelf->SetSizeHint(0, 0, 60, 0);
+	SizeShelfButton *brushesButton = new SizeShelfButton();
+	brushesButton->SetMargin(4, 4, 6, 0);
+	brushesButton->SetInnerSizeHint(0, 0, 50, 66);
+	brushesButton->LoadImages(vg, "images\\brush32.png", "images\\arrow8.png");
+	brushesButton->SetText("Pinceaux");
+	brushesShelf->SetContent(brushesButton);
+	brushesShelf->AutoSizeHint();
 	shelf->AddItem(brushesShelf);
 
 	shelf->AddItem(new ShelfSeparator());
@@ -1385,17 +1409,13 @@ int main()
 	shelf->AddItem(new ShelfSeparator());
 
 	ShelfSection *sizeShelf = new ShelfSection();
-	sizeShelf->SetLabelText("<Size>");
-	sizeShelf->SetSizeHint(0, 0, 52, 0);
-	sizeShelf->SetMarginTop(4);
-
 	SizeShelfButton *sizeButton = new SizeShelfButton();
-	sizeButton->SetSizeHint(0, 0, 42, 66);
+	sizeButton->SetMargin(4, 4, 6, 0);
+	sizeButton->SetInnerSizeHint(0, 0, 42, 66);
 	sizeButton->LoadImages(vg, "images\\stroke32.png", "images\\arrow8.png");
 	sizeButton->SetText("Taille");
-	sizeButton->SetMargin(4, 0, 6, 0);
 	sizeShelf->SetContent(sizeButton);
-
+	sizeShelf->AutoSizeHint();
 	shelf->AddItem(sizeShelf);
 
 	shelf->AddItem(new ShelfSeparator());
@@ -1403,10 +1423,11 @@ int main()
 	// Color shelf
 	ShelfSection *colorShelf = new ShelfSection();
 	colorShelf->SetLabelText("Couleurs");
-	colorShelf->SetMarginTop(4);
+	colorShelf->SetMargin(0, 4, 0, 0);
 
 	GridLayout *colorGrid = new GridLayout();
-	colorGrid->SetSizeHint(0, 0, 218, 64);
+	colorGrid->SetMargin(1, 1, 1, 0);
+	colorGrid->SetInnerSizeHint(0, 0, 218, 64);
 	colorGrid->SetRowCount(3);
 	colorGrid->SetColCount(10);
 	colorGrid->SetRowSpacing(2);
@@ -1425,10 +1446,7 @@ int main()
 	}
 
 	HBoxLayout *colorWidgets = new HBoxLayout();
-	spacer = new UiElement();
-	spacer->SetSizeHint(0, 0, 4, 0);
-	colorWidgets->AddItem(spacer);
-
+	
 	ColorShelfButton *color1Button = new ColorShelfButton();
 	color1Button->SetSizeHint(0, 0, 46, 66);
 	color1Button->SetColorRole(ForegroundColor);
@@ -1441,24 +1459,16 @@ int main()
 	color2Button->SetText("Couleur 2");
 	colorWidgets->AddItem(color2Button);
 
-	spacer = new UiElement();
-	spacer->SetSizeHint(0, 0, 1, 0);
-	colorWidgets->AddItem(spacer);
+	colorWidgets->AddItem(colorGrid);
 
-	VBoxLayout *colorGridMargins = new VBoxLayout();
-	spacer = new UiElement();
-	spacer->SetSizeHint(0, 0, 0, 1);
-	colorGridMargins->AddItem(spacer);
-	colorGridMargins->AddItem(colorGrid);
-	spacer = new UiElement();
-	spacer->SetSizeHint(0, 0, 0, 1);
-	colorGridMargins->AddItem(spacer);
-	colorGridMargins->AutoSizeHint();
-	colorWidgets->AddItem(colorGridMargins);
+	ImageShelfButton *editColorButton = new ImageShelfButton();
+	editColorButton->SetMargin(1, 0, 0, 0);
+	editColorButton->SetInnerSizeHint(0, 0, 66, 66);
+	editColorButton->LoadImage(vg, "images\\colors32.png");
+	editColorButton->SetText("Modifier les couleurs");
+	colorWidgets->AddItem(editColorButton);
 
-	spacer = new UiElement();
-	spacer->SetSizeHint(0, 0, 73, 0);
-	colorWidgets->AddItem(spacer);
+	colorWidgets->SetMargin(4, 0, 6, 0);
 	colorWidgets->AutoSizeHint();
 
 	colorShelf->SetContent(colorWidgets);
@@ -1469,8 +1479,13 @@ int main()
 	shelf->AddItem(new ShelfSeparator());
 
 	ShelfSection *paint3dShelf = new ShelfSection();
-	paint3dShelf->SetLabelText("<Paint3D>");
-	paint3dShelf->SetSizeHint(0, 0, 58, 0);
+	ImageShelfButton *paint3dButton = new ImageShelfButton();
+	paint3dButton->SetMargin(4, 4, 6, 0);
+	paint3dButton->SetInnerSizeHint(0, 0, 48, 66);
+	paint3dButton->LoadImage(vg, "images\\paint3d32.png");
+	paint3dButton->SetText("Ouvrir Paint 3D");
+	paint3dShelf->SetContent(paint3dButton);
+	paint3dShelf->AutoSizeHint();
 	shelf->AddItem(paint3dShelf);
 
 	shelf->AddItem(new ShelfSeparator());
@@ -1490,9 +1505,6 @@ int main()
 	statusBar->LoadImages(vg);
 
 	// Load images
-	Image pasteOffImg(vg, "images\\pasteOff32.png");
-
-	Image selectImg(vg, "images\\select32.png");
 	Image cropOffImg(vg, "images\\cropOff18.png");
 	Image resizeImg(vg, "images\\resize18.png");
 	Image rotateImg(vg, "images\\rotate18.png");
@@ -1517,28 +1529,18 @@ int main()
 
 		// // Shelf images
 		// Clipboard
-		pasteOffImg.Paint(11, 24 + 6);
-
+		
 		nvgTextAlign(vg, NVG_ALIGN_LEFT);
 		nvgFillColor(vg, nvgRGBA(141, 141, 141, 255));
 		nvgText(vg, 70, 43, "Couper", NULL);
 		
 		nvgFillColor(vg, nvgRGBA(141, 141, 141, 255));
 		nvgText(vg, 70, 65, "Copier", NULL);
-		
-		nvgTextAlign(vg, NVG_ALIGN_CENTER);
-		nvgFillColor(vg, nvgRGBA(60, 60, 60, 255));
-		nvgText(vg, 12 + 15, 77, "Coller", NULL);
 
 		// Image
-		selectImg.Paint(141, 24 + 7);
 		cropOffImg.Paint(194, 24 + 5);
 		resizeImg.Paint(194, 24 + 28);
 		rotateImg.Paint(194, 24 + 50);
-
-		nvgTextAlign(vg, NVG_ALIGN_CENTER);
-		nvgFillColor(vg, nvgRGBA(60, 60, 60, 255));
-		nvgText(vg, 140 + 15, 77, u8"Sélectionner", NULL);
 
 		nvgTextAlign(vg, NVG_ALIGN_LEFT);
 		nvgFillColor(vg, nvgRGBA(141, 141, 141, 255));
@@ -1551,11 +1553,6 @@ int main()
 		nvgTextAlign(vg, NVG_ALIGN_LEFT);
 		nvgFillColor(vg, nvgRGBA(60, 60, 60, 255));
 		nvgText(vg, 214, 87, "Faire pivoter", NULL);
-
-		// Paint
-		nvgTextAlign(vg, NVG_ALIGN_CENTER);
-		nvgFillColor(vg, nvgRGBA(60, 60, 60, 255));
-		nvgText(vg, 394 + 24, 77, "Pinceaux", NULL);
 
 		// Shapes
 		nvgTextAlign(vg, NVG_ALIGN_LEFT);
@@ -1573,9 +1570,6 @@ int main()
 	}
 
 	// Free images
-	pasteOffImg.Delete();
-
-	selectImg.Delete();
 	cropOffImg.Delete();
 	resizeImg.Delete();
 	rotateImg.Delete();

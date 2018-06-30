@@ -46,7 +46,19 @@ public:
 		m_sizeHint = hint;
 	}
 	void SetSizeHint(int x, int y, int w, int h) {
-		m_sizeHint = ::Rect(x, y, w, h);
+		SetSizeHint(::Rect(x, y, w, h));
+	}
+	/// Beware to setup margins before
+	void SetInnerSizeHint(::Rect hint) {
+		SetSizeHint(
+			hint.x,
+			hint.y,
+			hint.w + m_margin.x + m_margin.w,
+			hint.h + m_margin.y + m_margin.h
+		);
+	}
+	void SetInnerSizeHint(int x, int y, int w, int h) {
+		SetInnerSizeHint(::Rect(x, y, w, h));
 	}
 	virtual ::Rect SizeHint() {
 		return m_sizeHint;
@@ -108,7 +120,9 @@ public:
 public: // protected
 	void OnMouseOver(int x, int y) override {
 		UiElement::OnMouseOver(x, y);
-		m_isMouseOver = true;
+		if (InnerRect().Contains(x, y)) {
+			m_isMouseOver = true;
+		}
 	}
 
 	void ResetMouse() override {
