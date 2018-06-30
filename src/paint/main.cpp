@@ -137,6 +137,9 @@ public:
 
 	int Handle() const { return m_img; }
 
+	int Width() const { return m_width; }
+	int Height() const { return m_height; }
+
 private:
 	int m_img; /// Image ID
 	struct NVGcontext* m_vg; /// Parent context
@@ -180,15 +183,16 @@ enum Tool {
 	BrushTool,
 	SelectTool,
 };
+enum ColorRole {
+	ForegroundColor,
+	BackgroundColor,
+};
 struct Editor {
-	float zoom;
-	NVGcolor foregroundColor;
+	float zoom = 1.0f;
+	NVGcolor foregroundColor = nvgRGB(0, 0, 0);
+	NVGcolor backgroundColor = nvgRGB(255, 255, 255);
 	Tool currentTool = BrushTool;
-
-	Editor()
-		: zoom(1.0f)
-		, foregroundColor(nvgRGB(0, 0, 0))
-	{}
+	ColorRole currentColor = ForegroundColor;
 };
 
 // TODO: get rid of this global (might require some kind of signals or passing a pointer to this global state to all the widgets)
@@ -196,7 +200,7 @@ Editor *ed;
 
 // Custom UI elements
 
-class UiButton : public UiMouseAwareElement {
+class UiTabButton : public UiMouseAwareElement {
 public:
 	const NVGcolor & BackgroundColor() const { return m_backgroundColor; }
 	void SetBackgroundColor(const NVGcolor & color) { m_backgroundColor = color; }
@@ -234,7 +238,7 @@ private:
 	std::string m_label;
 };
 
-class FileButton : public UiButton {
+class FileButton : public UiTabButton {
 public:
 	FileButton()
 		: m_isFadingOut(false)
@@ -249,7 +253,7 @@ public:
 
 public: // protected
 	void OnTick() override {
-		UiButton::OnTick();
+		UiTabButton::OnTick();
 
 		if (m_isFadingOut) {
 			float t = (glfwGetTime() - m_fadingStartTime) / m_fadingDuration;
@@ -262,7 +266,7 @@ public: // protected
 	}
 
 	void Paint(NVGcontext *vg) const override {
-		UiButton::Paint(vg);
+		UiTabButton::Paint(vg);
 
 		const ::Rect & r = Rect();
 		nvgBeginPath(vg);
@@ -288,7 +292,7 @@ private:
 	const float m_fadingDuration; // in seconds
 };
 
-class HomeButton : public UiButton {
+class HomeButton : public UiTabButton {
 public:
 	HomeButton() {
 		SetSizeHint(::Rect(0, 0, 64, 0));
@@ -300,7 +304,7 @@ public:
 
 public:
 	void Paint(NVGcontext *vg) const override {
-		UiButton::Paint(vg);
+		UiTabButton::Paint(vg);
 
 		const ::Rect & r = Rect();
 		nvgBeginPath(vg);
@@ -313,7 +317,7 @@ public:
 	}
 };
 
-class ViewButton : public UiButton {
+class ViewButton : public UiTabButton {
 public:
 	ViewButton()
 		: m_isFadingOut(false)
@@ -328,7 +332,7 @@ public:
 
 public: // protected
 	void OnTick() override {
-		UiButton::OnTick();
+		UiTabButton::OnTick();
 
 		if (m_isFadingOut) {
 			float t = (glfwGetTime() - m_fadingStartTime) / m_fadingDuration;
@@ -341,7 +345,7 @@ public: // protected
 	}
 
 	void Paint(NVGcontext *vg) const override {
-		UiButton::Paint(vg);
+		UiTabButton::Paint(vg);
 
 		const ::Rect & r = Rect();
 		nvgBeginPath(vg);
@@ -427,7 +431,11 @@ public: // protected
 
 	void OnMouseClick(int button, int action, int mods) override {
 		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-			ed->foregroundColor = Color();
+			if (ed->currentColor == ForegroundColor) {
+				ed->foregroundColor = Color();
+			} else {
+				ed->backgroundColor = Color();
+			}
 		}
 	}
 
@@ -470,7 +478,7 @@ public: // protected
 		if (isCurrent || m_isMouseOver) {
 			// Background
 			nvgBeginPath(vg);
-			nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+			nvgRect(vg, r.x, r.y, r.w, r.h);
 			nvgFillColor(vg, isCurrent ? (m_isMouseOver ? nvgRGB(213, 230, 247) : nvgRGB(201, 224, 247)) : nvgRGB(232, 239, 247));
 			nvgFill(vg);
 		}
@@ -989,6 +997,154 @@ public: // protected
 	}
 };
 
+class ColorShelfButton : public UiMouseAwareElement {
+public:
+	ColorShelfButton()
+		: m_isMouseOver(false)
+		, m_colorRole(ForegroundColor)
+	{}
+
+	void SetColorRole(ColorRole colorRole) { m_colorRole = colorRole; }
+	ColorRole ColorRole() const { return m_colorRole; }
+
+	void SetText(const std::string & text) { m_text = text; }
+	const std::string & Text() const { return m_text; }
+
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		const ::Rect & r = Rect();
+		bool isCurrent = ed->currentColor == ColorRole();
+
+		if (isCurrent || m_isMouseOver) {
+			// Background
+			nvgBeginPath(vg);
+			nvgRect(vg, r.x, r.y, r.w, r.h);
+			nvgFillColor(vg, isCurrent ? (m_isMouseOver ? nvgRGB(213, 230, 247) : nvgRGB(201, 224, 247)) : nvgRGB(232, 239, 247));
+			nvgFill(vg);
+			// Main Border
+			nvgBeginPath(vg);
+			nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+			nvgStrokeColor(vg, isCurrent ? (m_isMouseOver ? nvgRGB(122, 176, 231) : nvgRGB(98, 162, 228)) : nvgRGB(164, 206, 249));
+			nvgStroke(vg);
+		}
+
+		// Color Thumb
+		float hsize = ColorRole() == ForegroundColor ? 16.0 : 12.0; // half square size
+		float cx = r.x + r.w / 2;
+		float cy = r.y + 19;
+		// // Border
+		nvgBeginPath(vg);
+		nvgRect(vg, cx - hsize + 0.5, cy - hsize + 0.5, hsize * 2 - 1, hsize * 2 - 1);
+		nvgStrokeColor(vg, nvgRGB(128, 128, 128));
+		nvgStroke(vg);
+		// // Color
+		nvgBeginPath(vg);
+		nvgRect(vg, cx - hsize + 2, cy - hsize + 2, hsize * 2 - 4, hsize * 2 - 4);
+		nvgFillColor(vg, ColorRole() == ForegroundColor ? ed->foregroundColor : ed->backgroundColor);
+		nvgFill(vg);
+
+		// Label
+		nvgTextAlign(vg, NVG_ALIGN_CENTER);
+		nvgTextLineHeight(vg, 13.0f / 15.0f);
+		nvgFillColor(vg, nvgRGB(60, 60, 60));
+		nvgTextBox(vg, r.x + 2, r.y + r.h - 6 - 11, r.w - 4, Text().c_str(), NULL);
+	}
+
+	void OnMouseEnter() override {
+		m_isMouseOver = true;
+	}
+
+	void OnMouseLeave() override {
+		m_isMouseOver = false;
+	}
+
+	void OnMouseClick(int button, int action, int mods) override {
+		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+			ed->currentColor = ColorRole();
+		}
+	}
+
+private:
+	::ColorRole m_colorRole;
+	bool m_isMouseOver;
+	std::string m_text;
+};
+
+
+class SizeShelfButton : public UiMouseAwareElement {
+public:
+	SizeShelfButton()
+		: m_isMouseOver(false)
+	{}
+
+	~SizeShelfButton() {
+		DeleteImages();
+	}
+
+	void LoadImages(NVGcontext *vg, const std::string & path, const std::string & arrowPath) {
+		m_image.Load(vg, path);
+		m_arrowImage.Load(vg, arrowPath);
+	}
+	// Call this or destroy object before the NVG context gets freed
+	void DeleteImages() {
+		m_image.Delete();
+		m_arrowImage.Delete();
+	}
+
+	void SetText(const std::string & text) { m_text = text; }
+	const std::string & Text() const { return m_text; }
+
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		const ::Rect & r = Rect();
+		bool isCurrent = false;
+
+		if (isCurrent || m_isMouseOver) {
+			// Background
+			nvgBeginPath(vg);
+			nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+			nvgFillColor(vg, isCurrent ? (m_isMouseOver ? nvgRGB(213, 230, 247) : nvgRGB(201, 224, 247)) : nvgRGB(232, 239, 247));
+			nvgFill(vg);
+		}
+
+		m_image.Paint(r.x + (r.w - m_image.Width()) / 2, r.y + 3);
+		m_arrowImage.Paint(r.x + (r.w - m_arrowImage.Width()) / 2, r.y + r.h - 3 - m_arrowImage.Height());
+
+		if (isCurrent || m_isMouseOver) {
+			// Main Border
+			nvgBeginPath(vg);
+			nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+			nvgStrokeColor(vg, isCurrent ? (m_isMouseOver ? nvgRGB(122, 176, 231) : nvgRGB(98, 162, 228)) : nvgRGB(164, 206, 249));
+			nvgStroke(vg);
+		}
+
+		// Label
+		nvgTextAlign(vg, NVG_ALIGN_CENTER);
+		nvgTextLineHeight(vg, 13.0f / 15.0f);
+		nvgFillColor(vg, nvgRGB(60, 60, 60));
+		nvgTextBox(vg, r.x + 2, r.y + r.h - 6 - 11, r.w - 4, Text().c_str(), NULL);
+	}
+
+	void OnMouseEnter() override {
+		m_isMouseOver = true;
+	}
+
+	void OnMouseLeave() override {
+		m_isMouseOver = false;
+	}
+
+	void OnMouseClick(int button, int action, int mods) override {
+		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+			// TODO
+		}
+	}
+
+private:
+	Image m_image, m_arrowImage;
+	bool m_isMouseOver;
+	std::string m_text;
+};
+
 class UiWindow {
 public:
 	UiWindow()
@@ -1232,6 +1388,12 @@ int main()
 	ShelfSection *sizeShelf = new ShelfSection();
 	sizeShelf->SetLabelText("<Size>");
 	sizeShelf->SetSizeHint(0, 0, 52, 0);
+	sizeShelf->SetMarginTop(4);
+	SizeShelfButton *sizeButton = new SizeShelfButton();
+	sizeButton->SetSizeHint(0, 0, 42, 66);
+	sizeButton->LoadImages(vg, "images\\stroke32.png", "images\\arrow8.png");
+	sizeButton->SetText("Taille");
+	sizeShelf->SetContent(sizeButton);
 	shelf->AddItem(sizeShelf);
 
 	shelf->AddItem(new ShelfSeparator());
@@ -1239,7 +1401,7 @@ int main()
 	// Color shelf
 	ShelfSection *colorShelf = new ShelfSection();
 	colorShelf->SetLabelText("Couleurs");
-	colorShelf->SetMarginTop(5);
+	colorShelf->SetMarginTop(4);
 
 	GridLayout *colorGrid = new GridLayout();
 	colorGrid->SetSizeHint(0, 0, 218, 64);
@@ -1262,9 +1424,36 @@ int main()
 
 	HBoxLayout *colorWidgets = new HBoxLayout();
 	spacer = new UiElement();
-	spacer->SetSizeHint(0, 0, 97, 0);
+	spacer->SetSizeHint(0, 0, 4, 0);
 	colorWidgets->AddItem(spacer);
-	colorWidgets->AddItem(colorGrid);
+
+	ColorShelfButton *color1Button = new ColorShelfButton();
+	color1Button->SetSizeHint(0, 0, 46, 66);
+	color1Button->SetColorRole(ForegroundColor);
+	color1Button->SetText("Couleur 1");
+	colorWidgets->AddItem(color1Button);
+
+	ColorShelfButton *color2Button = new ColorShelfButton();
+	color2Button->SetSizeHint(0, 0, 46, 66);
+	color2Button->SetColorRole(BackgroundColor);
+	color2Button->SetText("Couleur 2");
+	colorWidgets->AddItem(color2Button);
+
+	spacer = new UiElement();
+	spacer->SetSizeHint(0, 0, 1, 0);
+	colorWidgets->AddItem(spacer);
+
+	VBoxLayout *colorGridMargins = new VBoxLayout();
+	spacer = new UiElement();
+	spacer->SetSizeHint(0, 0, 0, 1);
+	colorGridMargins->AddItem(spacer);
+	colorGridMargins->AddItem(colorGrid);
+	spacer = new UiElement();
+	spacer->SetSizeHint(0, 0, 0, 1);
+	colorGridMargins->AddItem(spacer);
+	colorGridMargins->AutoSizeHint();
+	colorWidgets->AddItem(colorGridMargins);
+
 	spacer = new UiElement();
 	spacer->SetSizeHint(0, 0, 73, 0);
 	colorWidgets->AddItem(spacer);
@@ -1374,54 +1563,6 @@ int main()
 		nvgTextAlign(vg, NVG_ALIGN_LEFT);
 		nvgFillColor(vg, nvgRGBA(141, 141, 141, 255));
 		nvgText(vg, 637, 65, "Remplissage", NULL);
-
-		// Colors
-		// // Front Color
-		nvgBeginPath(vg);
-		nvgRect(vg, 774 + 4, 24 + 4, 46, 66);
-		nvgFillColor(vg, nvgRGB(201, 224, 247));
-		nvgFill(vg);
-
-		nvgBeginPath(vg);
-		nvgRect(vg, 774 + 4.5, 24 + 4.5, 45, 65);
-		nvgStrokeColor(vg, nvgRGB(98, 162, 228));
-		nvgStroke(vg);
-
-		nvgBeginPath(vg);
-		nvgRect(vg, 774 + 11.5, 24 + 7.5, 31, 31);
-		nvgStrokeColor(vg, nvgRGB(128, 128, 128));
-		nvgStroke(vg);
-
-		nvgBeginPath(vg);
-		nvgRect(vg, 774 + 13, 24 + 9, 28, 28);
-		nvgFillColor(vg, ed->foregroundColor);
-		nvgFill(vg);
-
-		nvgTextAlign(vg, NVG_ALIGN_CENTER);
-		nvgTextLineHeight(vg, 13.0f / 15.0f);
-		nvgFillColor(vg, nvgRGBA(60, 60, 60, 255));
-		nvgTextBox(vg, 774 + 6, 24 + 53, 42, "Couleur 1", NULL);
-
-		// Back Color
-		nvgBeginPath(vg);
-		nvgRect(vg, 774 + 61.5, 24 + 12.5, 23, 23);
-		nvgStrokeColor(vg, nvgRGB(128, 128, 128));
-		nvgStroke(vg);
-
-		nvgBeginPath(vg);
-		nvgRect(vg, 774 + 63, 24 + 13, 20, 20);
-		nvgFillColor(vg, nvgRGB(255, 255, 255));
-		nvgFill(vg);
-
-		nvgTextAlign(vg, NVG_ALIGN_CENTER);
-		nvgTextLineHeight(vg, 13.0f / 15.0f);
-		nvgFillColor(vg, nvgRGBA(60, 60, 60, 255));
-		nvgTextBox(vg, 774 + 52, 24 + 53, 42, "Couleur 2", NULL);
-
-		// Size
-		nvgTextAlign(vg, NVG_ALIGN_CENTER);
-		nvgFillColor(vg, nvgRGBA(90, 90, 90, 255));
-		nvgText(vg, 722 + 25, 77, "Taille", NULL);
 
 		window.EndRender();
 
