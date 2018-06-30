@@ -219,7 +219,7 @@ public:
 
 public:
 	void Paint(NVGcontext *vg) const override {
-		const ::Rect & r = Rect();
+		const ::Rect & r = InnerRect();
 		nvgBeginPath(vg);
 		nvgRect(vg, r.x, r.y, r.w, r.h);
 		nvgFillColor(vg, BackgroundColor());
@@ -268,7 +268,7 @@ public: // protected
 	void Paint(NVGcontext *vg) const override {
 		UiTabButton::Paint(vg);
 
-		const ::Rect & r = Rect();
+		const ::Rect & r = InnerRect();
 		nvgBeginPath(vg);
 		nvgMoveTo(vg, r.x, r.y + r.h - 0.5);
 		nvgLineTo(vg, r.x + r.w, r.y + r.h - 0.5);
@@ -306,7 +306,7 @@ public:
 	void Paint(NVGcontext *vg) const override {
 		UiTabButton::Paint(vg);
 
-		const ::Rect & r = Rect();
+		const ::Rect & r = InnerRect();
 		nvgBeginPath(vg);
 		nvgMoveTo(vg, r.x + 0.5, r.y + r.h);
 		nvgLineTo(vg, r.x + 0.5, r.y + 0.5);
@@ -347,7 +347,7 @@ public: // protected
 	void Paint(NVGcontext *vg) const override {
 		UiTabButton::Paint(vg);
 
-		const ::Rect & r = Rect();
+		const ::Rect & r = InnerRect();
 		nvgBeginPath(vg);
 		nvgMoveTo(vg, r.x + 0.5, r.y + r.h + 1);
 		nvgLineTo(vg, r.x + 0.5, r.y + 0.5);
@@ -396,7 +396,7 @@ public:
 
 public: // protected
 	void Paint(NVGcontext *vg) const override {
-		const ::Rect & r = Rect();
+		const ::Rect & r = InnerRect();
 		
 		// White border
 		if (m_isEnabled) {
@@ -472,7 +472,7 @@ public:
 
 public: // protected
 	void Paint(NVGcontext *vg) const override {
-		const ::Rect & r = Rect();
+		const ::Rect & r = InnerRect();
 		bool isCurrent = ed->currentTool == TargetTool();
 
 		if (isCurrent || m_isMouseOver) {
@@ -524,7 +524,7 @@ public:
 
 public: // protected
 	void Paint(NVGcontext *vg) const override {
-		const ::Rect & r = Rect();
+		const ::Rect & r = InnerRect();
 
 		nvgBeginPath(vg);
 		nvgRect(vg, r.x, r.y, r.w, r.h);
@@ -573,7 +573,7 @@ public:
 
 public: // protected
 	void Paint(NVGcontext *vg) const override {
-		const ::Rect & r = Rect();
+		const ::Rect & r = InnerRect();
 
 		nvgBeginPath(vg);
 		nvgRect(vg, r.x, r.y, r.w, r.h);
@@ -658,7 +658,7 @@ public: // protected
 	}
 
 	void Paint(NVGcontext *vg) const override {
-		const ::Rect & r = Rect();
+		const ::Rect & r = InnerRect();
 		nvgBeginPath(vg);
 		nvgRect(vg, r.x, r.y, r.w, r.h);
 		nvgFillColor(vg, nvgRGB(255, 255, 255));
@@ -707,7 +707,7 @@ private:
 			InitStrokeEngine();
 		}
 
-		const ::Rect & r = Rect();
+		const ::Rect & r = InnerRect();
 		int fbWidth = 1024, fbHeight = 1024;
 
 		glBindFramebuffer(GL_FRAMEBUFFER, m_frameBuffer);
@@ -934,7 +934,7 @@ private:
 class Shelf : public HBoxLayout {
 public: // protected
 	void Paint(NVGcontext *vg) const override {
-		const ::Rect & r = Rect();
+		const ::Rect & r = InnerRect();
 		HBoxLayout::Paint(vg);
 		nvgBeginPath(vg);
 		nvgMoveTo(vg, r.x, r.y + r.h - 0.5);
@@ -988,7 +988,7 @@ public:
 
 public: // protected
 	void Paint(NVGcontext *vg) const override {
-		const ::Rect & r = Rect();
+		const ::Rect & r = InnerRect();
 		nvgBeginPath(vg);
 		nvgMoveTo(vg, r.x + 0.5, r.y + 2);
 		nvgLineTo(vg, r.x + 0.5, r.y + r.h - 4);
@@ -1012,7 +1012,7 @@ public:
 
 public: // protected
 	void Paint(NVGcontext *vg) const override {
-		const ::Rect & r = Rect();
+		const ::Rect & r = InnerRect();
 		bool isCurrent = ed->currentColor == ColorRole();
 
 		if (isCurrent || m_isMouseOver) {
@@ -1070,7 +1070,6 @@ private:
 	std::string m_text;
 };
 
-
 class SizeShelfButton : public UiMouseAwareElement {
 public:
 	SizeShelfButton()
@@ -1096,7 +1095,7 @@ public:
 
 public: // protected
 	void Paint(NVGcontext *vg) const override {
-		const ::Rect & r = Rect();
+		const ::Rect & r = InnerRect();
 		bool isCurrent = false;
 
 		if (isCurrent || m_isMouseOver) {
@@ -1389,11 +1388,14 @@ int main()
 	sizeShelf->SetLabelText("<Size>");
 	sizeShelf->SetSizeHint(0, 0, 52, 0);
 	sizeShelf->SetMarginTop(4);
+
 	SizeShelfButton *sizeButton = new SizeShelfButton();
 	sizeButton->SetSizeHint(0, 0, 42, 66);
 	sizeButton->LoadImages(vg, "images\\stroke32.png", "images\\arrow8.png");
 	sizeButton->SetText("Taille");
+	sizeButton->SetMargin(4, 0, 6, 0);
 	sizeShelf->SetContent(sizeButton);
+
 	shelf->AddItem(sizeShelf);
 
 	shelf->AddItem(new ShelfSeparator());

@@ -95,9 +95,9 @@ public:
 		}
 		int nonNullHints = Items().size() - nullHints;
 #ifdef BUI_HBOX_IMPLEMENTATION
-		int remainingHeight = Rect().w - sumVHints;
+		int remainingHeight = InnerRect().w - sumVHints;
 #else
-		int remainingHeight = Rect().h - sumVHints;
+		int remainingHeight = InnerRect().h - sumVHints;
 #endif
 		int itemHeight = nullHints == 0 ? 0 : std::max(0, (int)floor(remainingHeight / nullHints));
 		int lastItemHeight = std::max(0, remainingHeight) - (nullHints - 1) * itemHeight;
@@ -130,9 +130,9 @@ public:
 				nonNullCount++;
 			}
 #ifdef BUI_HBOX_IMPLEMENTATION
-			item->SetRect(Rect().x + offset, Rect().y, height, Rect().h);
+			item->SetRect(InnerRect().x + offset, InnerRect().y, height, InnerRect().h);
 #else
-			item->SetRect(Rect().x, Rect().y + offset, Rect().w, height);
+			item->SetRect(InnerRect().x, InnerRect().y + offset, InnerRect().w, height);
 #endif
 			item->Update();
 			offset += height;
@@ -150,11 +150,11 @@ protected:
 		int offset = 0;
 		for (size_t i = 0; i < Items().size(); ++i) {
 #ifdef BUI_HBOX_IMPLEMENTATION
-			offset += Items()[i]->Rect().w;
-			if (Rect().x + offset > x) {
+			offset += Items()[i]->InnerRect().w;
+			if (InnerRect().x + offset > x) {
 #else
-			offset += Items()[i]->Rect().h;
-			if (Rect().y + offset > y) {
+			offset += Items()[i]->InnerRect().h;
+			if (InnerRect().y + offset > y) {
 #endif
 				idx = i;
 				return true;

@@ -26,14 +26,21 @@ public:
 
 	void SetRect(Rect rect) {
 		m_rect = rect;
+		m_innerRect.x = m_rect.x + m_margin.x;
+		m_innerRect.y = m_rect.y + m_margin.y;
+		m_innerRect.w = m_rect.w - m_margin.x - m_margin.w;
+		m_innerRect.h = m_rect.h - m_margin.y - m_margin.h;
 		Update();
 	}
-	void SetRect(int x, int y, int w, int h) {
-		SetRect(::Rect(x, y, w, h));
-	}
-	const Rect & Rect() const {
-		return m_rect;
-	}
+	void SetRect(int x, int y, int w, int h) { SetRect(::Rect(x, y, w, h)); }
+	const Rect & Rect() const { return m_rect; }
+
+	/// Return content rect, ie rect minus margin
+	const ::Rect & InnerRect() const { return m_innerRect; }
+
+	void SetMargin(::Rect margin) { m_margin = margin; Update(); }
+	void SetMargin(int x, int y, int w, int h) { SetMargin(::Rect(x, y, w, h)); }
+	const ::Rect & Margin() const { return m_margin; }
 
 	void SetSizeHint(::Rect hint) {
 		m_sizeHint = hint;
@@ -82,9 +89,8 @@ public:
 		}
 	}
 
-
 private:
-	::Rect m_rect, m_sizeHint;
+	::Rect m_rect, m_sizeHint, m_innerRect, m_margin;
 	bool m_debug;
 };
 
@@ -230,18 +236,19 @@ public:
 
 public:
 	void Update() override {
-		int itemWidth = (Rect().w - ColSpacing() * (ColCount() - 1)) / ColCount() + ColSpacing();
-		int itemHeight = (Rect().h - RowSpacing() * (RowCount() - 1)) / RowCount() + RowSpacing();
+		const ::Rect & r = InnerRect();
+		int itemWidth = (r.w - ColSpacing() * (ColCount() - 1)) / ColCount() + ColSpacing();
+		int itemHeight = (r.h - RowSpacing() * (RowCount() - 1)) / RowCount() + RowSpacing();
 		// Prevent rounding issues
-		int lastItemWidth = Rect().w - (ColCount() - 1) * itemWidth;
-		int lastItemHeight = Rect().h - (RowCount() - 1) * itemHeight;
+		int lastItemWidth = r.w - (ColCount() - 1) * itemWidth;
+		int lastItemHeight = r.h - (RowCount() - 1) * itemHeight;
 
 		for (size_t i = 0 ; i < Items().size() ; ++i) {
 			size_t colIndex = i % ColCount();
 			size_t rowIndex = i / ColCount();
 			Items()[i]->SetRect(
-				Rect().x + colIndex * itemWidth,
-				Rect().y + rowIndex * itemHeight,
+				r.x + colIndex * itemWidth,
+				r.y + rowIndex * itemHeight,
 				colIndex == (ColCount() - 1) ? lastItemWidth : (itemWidth - ColSpacing()),
 				rowIndex == (RowCount() - 1) ? lastItemHeight : (itemHeight - RowSpacing())
 			);
@@ -250,11 +257,12 @@ public:
 
 protected:
 	bool GetIndexAt(size_t & idx, int x, int y) override {
-		int relativeX = x - Rect().x;
-		int relativeY = y - Rect().y;
+		const ::Rect & r = InnerRect();
+		int relativeX = x - r.x;
+		int relativeY = y - r.y;
 
-		int itemWidth = (Rect().w - ColSpacing() * (ColCount() - 1)) / ColCount() + ColSpacing();
-		int itemHeight = (Rect().h - RowSpacing() * (RowCount() - 1)) / RowCount() + RowSpacing();
+		int itemWidth = (r.w - ColSpacing() * (ColCount() - 1)) / ColCount() + ColSpacing();
+		int itemHeight = (r.h - RowSpacing() * (RowCount() - 1)) / RowCount() + RowSpacing();
 
 		size_t colIndex = std::min((int)(floor(relativeX / itemWidth)), ColCount() - 1);
 		size_t rowIndex = std::min((int)(floor(relativeY / itemHeight)), RowCount() - 1);
@@ -289,7 +297,7 @@ typedef enum {
 class Label : public UiElement {
 public: // protected
 	void Paint(NVGcontext *vg) const override {
-		const ::Rect & r = Rect();
+		const ::Rect & r = InnerRect();
 		nvgTextAlign(vg, NVG_ALIGN_CENTER);
 		nvgFillColor(vg, Color());
 		nvgText(vg, r.x + r.w / 2.0, r.y + r.h - 6, Text().c_str(), NULL);
