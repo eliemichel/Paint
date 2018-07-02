@@ -200,6 +200,57 @@ Editor *ed;
 
 // Custom UI elements
 
+/// Add IsMouseOver() to UiMouseAwareElement
+class UiTrackMouseElement : public UiMouseAwareElement {
+public:
+	UiTrackMouseElement()
+		: UiMouseAwareElement()
+		, m_isMouseOver(false)
+	{}
+
+public: // protected
+	void OnMouseEnter() override {
+		m_isMouseOver = true;
+	}
+
+	void OnMouseLeave() override {
+		m_isMouseOver = false;
+	}
+
+protected:
+	bool IsMouseOver() const { return m_isMouseOver; }
+
+private:
+	bool m_isMouseOver;
+};
+
+/// Blue-bordered buttons
+class UiDefaultButton : public UiTrackMouseElement {
+protected:
+	/// To be overridden
+	virtual bool IsCurrent() const { return false; }
+
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		const ::Rect & r = InnerRect();
+		bool isCurrent = IsCurrent();
+		bool isMouseOver = IsMouseOver();
+
+		if (isCurrent || isMouseOver) {
+			// Background
+			nvgBeginPath(vg);
+			nvgRect(vg, r.x, r.y, r.w, r.h);
+			nvgFillColor(vg, isCurrent ? (isMouseOver ? nvgRGB(213, 230, 247) : nvgRGB(201, 224, 247)) : nvgRGB(232, 239, 247));
+			nvgFill(vg);
+			// Main Border
+			nvgBeginPath(vg);
+			nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+			nvgStrokeColor(vg, isCurrent ? (isMouseOver ? nvgRGB(122, 176, 231) : nvgRGB(98, 162, 228)) : nvgRGB(164, 206, 249));
+			nvgStroke(vg);
+		}
+	}
+};
+
 class UiTabButton : public UiMouseAwareElement {
 public:
 	const NVGcolor & BackgroundColor() const { return m_backgroundColor; }
@@ -380,11 +431,10 @@ private:
 	const float m_fadingDuration; // in seconds
 };
 
-class ColorButton : public UiMouseAwareElement {
+class ColorButton : public UiTrackMouseElement {
 public:
 	ColorButton()
 		: m_isEnabled(true)
-		, m_isMouseOver(false)
 	{}
 
 	const NVGcolor & Color() const { return m_color; }
@@ -402,14 +452,14 @@ public: // protected
 		if (m_isEnabled) {
 			nvgBeginPath(vg);
 			nvgRect(vg, r.x, r.y, r.w, r.h);
-			nvgFillColor(vg, m_isMouseOver ? nvgRGB(203, 228, 253) : nvgRGB(255, 255, 255));
+			nvgFillColor(vg, IsMouseOver() ? nvgRGB(203, 228, 253) : nvgRGB(255, 255, 255));
 			nvgFill(vg);
 		}
 
 		// Main Border
 		nvgBeginPath(vg);
 		nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-		nvgStrokeColor(vg, m_isMouseOver && m_isEnabled ? nvgRGB(100, 165, 231) : nvgRGB(160, 160, 160));
+		nvgStrokeColor(vg, IsMouseOver() && m_isEnabled ? nvgRGB(100, 165, 231) : nvgRGB(160, 160, 160));
 		nvgStroke(vg);
 
 		// Color
@@ -419,14 +469,6 @@ public: // protected
 			nvgFillColor(vg, Color());
 			nvgFill(vg);
 		}
-	}
-
-	void OnMouseEnter() override {
-		m_isMouseOver = true;
-	}
-
-	void OnMouseLeave() override {
-		m_isMouseOver = false;
 	}
 
 	void OnMouseClick(int button, int action, int mods) override {
@@ -442,16 +484,10 @@ public: // protected
 private:
 	NVGcolor m_color;
 	bool m_isEnabled;
-	bool m_isMouseOver;
 };
 
-class ToolButton : public UiMouseAwareElement {
+class ToolButton : public UiDefaultButton {
 public:
-	ToolButton()
-		: m_isEnabled(true)
-		, m_isMouseOver(false)
-	{}
-
 	~ToolButton() {
 		DeleteImage();
 	}
@@ -467,40 +503,16 @@ public:
 		m_image.Delete();
 	}
 
-	bool IsEnabled() const { return m_isEnabled; }
-	void SetEnabled(bool enabled) { m_isEnabled = enabled; }
+protected:
+	bool IsCurrent() const override {
+		return ed->currentTool == TargetTool();
+	}
 
 public: // protected
 	void Paint(NVGcontext *vg) const override {
+		UiDefaultButton::Paint(vg);
 		const ::Rect & r = InnerRect();
-		bool isCurrent = ed->currentTool == TargetTool();
-
-		if (isCurrent || m_isMouseOver) {
-			// Background
-			nvgBeginPath(vg);
-			nvgRect(vg, r.x, r.y, r.w, r.h);
-			nvgFillColor(vg, isCurrent ? (m_isMouseOver ? nvgRGB(213, 230, 247) : nvgRGB(201, 224, 247)) : nvgRGB(232, 239, 247));
-			nvgFill(vg);
-		}
-
-		// TODO: Add alpha to images
 		m_image.Paint(r.x + 1, r.y);
-
-		if (isCurrent || m_isMouseOver) {
-			// Main Border
-			nvgBeginPath(vg);
-			nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-			nvgStrokeColor(vg, isCurrent  ? (m_isMouseOver ? nvgRGB(122, 176, 231) : nvgRGB(98, 162, 228)) : nvgRGB(164, 206, 249));
-			nvgStroke(vg);
-		}
-	}
-
-	void OnMouseEnter() override {
-		m_isMouseOver = true;
-	}
-
-	void OnMouseLeave() override {
-		m_isMouseOver = false;
 	}
 
 	void OnMouseClick(int button, int action, int mods) override {
@@ -512,8 +524,6 @@ public: // protected
 private:
 	Tool m_targetTool;
 	Image m_image;
-	bool m_isEnabled;
-	bool m_isMouseOver;
 };
 
 class MenuBar : public HBoxLayout {
@@ -540,7 +550,6 @@ public: // protected
 		HBoxLayout::Paint(vg);
 	}
 };
-
 
 class StatusBar : public HBoxLayout {
 public:
@@ -608,7 +617,6 @@ public: // protected
 private:
 	Image m_cursorImg, m_selectionImg, m_sizeImg, m_savedImg, m_zoomOutImg, m_zoomInImg;
 };
-
 
 /**
  * May not be a good idea to mix UI and paint stroke engine
@@ -988,12 +996,73 @@ public: // protected
 		nvgStroke(vg);
 	}
 };
+/// This is a mouse aware vbox layout with frame on hover
+class DoubleShelfButtonLayout : public VBoxLayout {
+public:
+	DoubleShelfButtonLayout() : m_isMouseOver(false) {}
 
-class ColorShelfButton : public UiMouseAwareElement {
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		const ::Rect & r = InnerRect();
+
+		// Frame
+		if (IsMouseOver()) {
+			nvgBeginPath(vg);
+			nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+			nvgStrokeColor(vg, nvgRGB(147, 190, 234));
+			nvgStroke(vg);
+		}
+
+		VBoxLayout::Paint(vg);
+
+		// Separators
+		if (IsMouseOver()) {
+			const std::vector<UiElement*> & items = Items();
+			for (int i = 0; i < items.size() - 1; ++i) {
+				nvgBeginPath(vg);
+				nvgRect(vg, r.x + 0.5, r.y + items[i]->Rect().h - 0.5, r.w - 1, 0);
+				nvgStrokeColor(vg, nvgRGB(147, 190, 234));
+				nvgStroke(vg);
+			}
+		}
+	}
+
+	void OnMouseOver(int x, int y) override {
+		VBoxLayout::OnMouseOver(x, y);
+		if (InnerRect().Contains(x, y)) {
+			m_isMouseOver = true;
+		}
+	}
+
+	void ResetMouse() override {
+		VBoxLayout::ResetMouse();
+		if (m_isMouseOver && !m_wasMouseOver) {
+			OnMouseEnter();
+		}
+		if (!m_isMouseOver && m_wasMouseOver) {
+			OnMouseLeave();
+		}
+
+		m_wasMouseOver = m_isMouseOver;
+		m_isMouseOver = false;
+	}
+
+	virtual void OnMouseEnter() {
+	}
+
+	virtual void OnMouseLeave() {
+	}
+
+	bool IsMouseOver() const { return m_isMouseOver; }
+
+private:
+	bool m_isMouseOver, m_wasMouseOver;
+};
+
+class ColorShelfButton : public UiDefaultButton {
 public:
 	ColorShelfButton()
-		: m_isMouseOver(false)
-		, m_colorRole(ForegroundColor)
+		: m_colorRole(ForegroundColor)
 	{}
 
 	void SetColorRole(ColorRole colorRole) { m_colorRole = colorRole; }
@@ -1002,26 +1071,20 @@ public:
 	void SetText(const std::string & text) { m_text = text; }
 	const std::string & Text() const { return m_text; }
 
+protected:
+	bool IsCurrent() const override {
+		return ed->currentColor == ColorRole();
+	}
+
 public: // protected
 	void Paint(NVGcontext *vg) const override {
 		const ::Rect & r = InnerRect();
-		bool isCurrent = ed->currentColor == ColorRole();
+		bool isForegroundColor = ColorRole() == ForegroundColor;
 
-		if (isCurrent || m_isMouseOver) {
-			// Background
-			nvgBeginPath(vg);
-			nvgRect(vg, r.x, r.y, r.w, r.h);
-			nvgFillColor(vg, isCurrent ? (m_isMouseOver ? nvgRGB(213, 230, 247) : nvgRGB(201, 224, 247)) : nvgRGB(232, 239, 247));
-			nvgFill(vg);
-			// Main Border
-			nvgBeginPath(vg);
-			nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-			nvgStrokeColor(vg, isCurrent ? (m_isMouseOver ? nvgRGB(122, 176, 231) : nvgRGB(98, 162, 228)) : nvgRGB(164, 206, 249));
-			nvgStroke(vg);
-		}
+		UiDefaultButton::Paint(vg);
 
 		// Color Thumb
-		float hsize = ColorRole() == ForegroundColor ? 16.0 : 12.0; // half square size
+		float hsize = isForegroundColor ? 16.0 : 12.0; // half square size
 		float cx = r.x + r.w / 2;
 		float cy = r.y + 19;
 		// // Border
@@ -1032,7 +1095,7 @@ public: // protected
 		// // Color
 		nvgBeginPath(vg);
 		nvgRect(vg, cx - hsize + 2, cy - hsize + 2, hsize * 2 - 4, hsize * 2 - 4);
-		nvgFillColor(vg, ColorRole() == ForegroundColor ? ed->foregroundColor : ed->backgroundColor);
+		nvgFillColor(vg, isForegroundColor ? ed->foregroundColor : ed->backgroundColor);
 		nvgFill(vg);
 
 		// Label
@@ -1040,14 +1103,6 @@ public: // protected
 		nvgTextLineHeight(vg, 13.0f / 15.0f);
 		nvgFillColor(vg, nvgRGB(60, 60, 60));
 		nvgTextBox(vg, r.x + 2, r.y + r.h - 6 - 11, r.w - 4, Text().c_str(), NULL);
-	}
-
-	void OnMouseEnter() override {
-		m_isMouseOver = true;
-	}
-
-	void OnMouseLeave() override {
-		m_isMouseOver = false;
 	}
 
 	void OnMouseClick(int button, int action, int mods) override {
@@ -1058,79 +1113,106 @@ public: // protected
 
 private:
 	::ColorRole m_colorRole;
-	bool m_isMouseOver;
 	std::string m_text;
 };
 
-class ImageShelfButton : public UiMouseAwareElement {
+// Default button with an image on it
+class ImageButton : public UiDefaultButton {
 public:
-	ImageShelfButton()
-		: m_isMouseOver(false)
-	{}
-
-	~ImageShelfButton() {
-		DeleteImages();
+	~ImageButton() {
+		DeleteImage();
 	}
 
 	void LoadImage(NVGcontext *vg, const std::string & path) {
 		m_image.Load(vg, path);
 	}
 	// Call this or destroy object before the NVG context gets freed
-	void DeleteImages() {
+	void DeleteImage() {
 		m_image.Delete();
 	}
 
-	void SetText(const std::string & text) { m_text = text; }
-	const std::string & Text() const { return m_text; }
+protected:
+	virtual void PaintImage(NVGcontext *vg) const {
+		const ::Rect & r = InnerRect();
+		m_image.Paint(r.x + (r.w - m_image.Width()) / 2, r.y + 3);
+	}
+
+	const Image & ImageLabel() const { return m_image; };
 
 public: // protected
 	void Paint(NVGcontext *vg) const override {
+		UiDefaultButton::Paint(vg);
+		PaintImage(vg);
+	}
+
+private:
+	Image m_image;
+};
+
+// Default button with a label on it
+class TextButton : public UiDefaultButton {
+public:
+	void SetText(const std::string & text) { m_text = text; }
+	const std::string & Text() const { return m_text; }
+
+protected:
+	void PaintLabel(NVGcontext *vg) const {
 		const ::Rect & r = InnerRect();
-		bool isCurrent = false;
-
-		if (isCurrent || m_isMouseOver) {
-			// Background
-			nvgBeginPath(vg);
-			nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-			nvgFillColor(vg, isCurrent ? (m_isMouseOver ? nvgRGB(213, 230, 247) : nvgRGB(201, 224, 247)) : nvgRGB(232, 239, 247));
-			nvgFill(vg);
-			// Main Border
-			nvgBeginPath(vg);
-			nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-			nvgStrokeColor(vg, isCurrent ? (m_isMouseOver ? nvgRGB(122, 176, 231) : nvgRGB(98, 162, 228)) : nvgRGB(164, 206, 249));
-			nvgStroke(vg);
-		}
-
-		m_image.Paint(r.x + (r.w - m_image.Width()) / 2, r.y + 3);
-
-		// Label
 		nvgTextAlign(vg, NVG_ALIGN_CENTER);
 		nvgTextLineHeight(vg, 13.0f / 15.0f);
 		nvgFillColor(vg, nvgRGB(60, 60, 60));
 		nvgTextBox(vg, r.x + 2, r.y + r.h - 6 - 11, r.w - 4, Text().c_str(), NULL);
 	}
 
-	void OnMouseEnter() override {
-		m_isMouseOver = true;
-	}
-
-	void OnMouseLeave() override {
-		m_isMouseOver = false;
-	}
-
-	void OnMouseClick(int button, int action, int mods) override {
-		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-			// TODO
-		}
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		UiDefaultButton::Paint(vg);
+		PaintLabel(vg);
 	}
 
 private:
-	Image m_image;
-	bool m_isMouseOver;
 	std::string m_text;
 };
 
-class SizeShelfButton : public ImageShelfButton {
+// Default button with both a label and an image
+// (Do not do multiple inheritage, it stinks)
+class TextImageButton : public ImageButton {
+public:
+	void SetText(const std::string & text) { m_text = text; }
+	const std::string & Text() const { return m_text; }
+
+protected:
+	void PaintLabel(NVGcontext *vg) const {
+		const ::Rect & r = InnerRect();
+		nvgTextAlign(vg, NVG_ALIGN_CENTER);
+		nvgTextLineHeight(vg, 13.0f / 15.0f);
+		nvgFillColor(vg, nvgRGB(60, 60, 60));
+		nvgTextBox(vg, r.x + 2, r.y + r.h - 6 - 11, r.w - 4, Text().c_str(), NULL);
+	}
+
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		UiDefaultButton::Paint(vg);
+		const ::Rect & r = UiDefaultButton::InnerRect();
+		PaintImage(vg);
+		PaintLabel(vg);
+	}
+
+private:
+	std::string m_text;
+};
+
+// TODO: avoid loading several times the arrow image
+class ArrowTextButton : public TextImageButton {
+protected:
+	virtual void PaintImage(NVGcontext *vg) const {
+		const ::Rect & r = InnerRect();
+		ImageLabel().Paint(r.x + (r.w - ImageLabel().Width()) / 2, r.y + r.h - 3 - ImageLabel().Height());
+	}
+};
+
+// TODO: avoid loading several times the arrow image
+class SizeShelfButton : public TextImageButton {
 public:
 	~SizeShelfButton() {
 		DeleteArrowImage();
@@ -1150,7 +1232,7 @@ public:
 
 public: // protected
 	void Paint(NVGcontext *vg) const override {
-		ImageShelfButton::Paint(vg);
+		TextImageButton::Paint(vg);
 		const ::Rect & r = InnerRect();
 		m_arrowImage.Paint(r.x + (r.w - m_arrowImage.Width()) / 2, r.y + r.h - 3 - m_arrowImage.Height());
 	}
@@ -1327,12 +1409,24 @@ int main()
 
 	ShelfSection *clipboardShelf = new ShelfSection();
 	clipboardShelf->SetLabelText("Presse-papiers");
-	SizeShelfButton *pasteButton = new SizeShelfButton();
-	pasteButton->SetMargin(6, 4, 70, 0);
-	pasteButton->SetInnerSizeHint(0, 0, 42, 66);
-	pasteButton->LoadImages(vg, "images\\pasteOff32.png", "images\\arrow8.png");
-	pasteButton->SetText("Coller");
-	clipboardShelf->SetContent(pasteButton);
+
+	DoubleShelfButtonLayout *clipboardButtons = new DoubleShelfButtonLayout();
+	clipboardButtons->SetMargin(6, 4, 70, 0);
+	// Top
+	ImageButton *topClipboardButton = new ImageButton();
+	topClipboardButton->SetInnerSizeHint(0, 0, 42, 38);
+	topClipboardButton->LoadImage(vg, "images\\pasteOff32.png");
+	clipboardButtons->AddItem(topClipboardButton);
+	// Bottom
+	ArrowTextButton *bottomClipboardButton = new ArrowTextButton();
+	bottomClipboardButton->SetMargin(0, -1, 0, 0); // merge border with previous button
+	bottomClipboardButton->SetInnerSizeHint(0, 0, 42, 29);
+	bottomClipboardButton->LoadImage(vg, "images\\arrow8.png");
+	bottomClipboardButton->SetText("Coller");
+	clipboardButtons->AddItem(bottomClipboardButton);
+	clipboardButtons->AutoSizeHint();
+
+	clipboardShelf->SetContent(clipboardButtons);
 	clipboardShelf->AutoSizeHint();
 	shelf->AddItem(clipboardShelf);
 
@@ -1340,12 +1434,23 @@ int main()
 
 	ShelfSection *imageShelf = new ShelfSection();
 	imageShelf->SetLabelText("Image");
-	SizeShelfButton *selectButton = new SizeShelfButton();
-	selectButton->SetMargin(4, 4, 6 + 111, 0);
-	selectButton->SetInnerSizeHint(0, 0, 68, 66);
-	selectButton->LoadImages(vg, "images\\select32.png", "images\\arrow8.png");
-	selectButton->SetText(u8"Sélectionner");
-	imageShelf->SetContent(selectButton);
+
+	DoubleShelfButtonLayout *selectButtons = new DoubleShelfButtonLayout();
+	selectButtons->SetMargin(4, 4, 6 + 111, 0);
+	// Top
+	ImageButton *topSelectButton = new ImageButton();
+	topSelectButton->SetInnerSizeHint(0, 0, 68, 38);
+	topSelectButton->LoadImage(vg, "images\\select32.png");
+	selectButtons->AddItem(topSelectButton);
+	// Bottom
+	ArrowTextButton *bottomSelectButton = new ArrowTextButton();
+	bottomSelectButton->SetMargin(0, -1, 0, 0); // merge border with previous button
+	bottomSelectButton->SetInnerSizeHint(0, 0, 68, 29);
+	bottomSelectButton->LoadImage(vg, "images\\arrow8.png");
+	bottomSelectButton->SetText(u8"Sélectionner");
+	selectButtons->AddItem(bottomSelectButton);
+	selectButtons->AutoSizeHint();
+	imageShelf->SetContent(selectButtons);
 	imageShelf->AutoSizeHint();
 
 	shelf->AddItem(imageShelf);
@@ -1378,7 +1483,6 @@ int main()
 		ToolButton *toolButton = new ToolButton();
 		toolButton->LoadImage(vg, filenames[i]); 
 		toolButton->SetTargetTool(tools[i]);
-		toolButton->SetEnabled(true);
 		toolsGrid->AddItem(toolButton);
 	}
 	
@@ -1409,13 +1513,24 @@ int main()
 	shelf->AddItem(new ShelfSeparator());
 
 	ShelfSection *sizeShelf = new ShelfSection();
-	SizeShelfButton *sizeButton = new SizeShelfButton();
-	sizeButton->SetMargin(4, 4, 6, 0);
-	sizeButton->SetInnerSizeHint(0, 0, 42, 66);
-	sizeButton->LoadImages(vg, "images\\stroke32.png", "images\\arrow8.png");
-	sizeButton->SetText("Taille");
-	sizeShelf->SetContent(sizeButton);
+	DoubleShelfButtonLayout *sizeButtons = new DoubleShelfButtonLayout();
+	sizeButtons->SetMargin(4, 4, 6, 0);
+	// Top
+	ImageButton *topSizeButton = new ImageButton();
+	topSizeButton->SetInnerSizeHint(0, 0, 42, 38);
+	topSizeButton->LoadImage(vg, "images\\stroke32.png");
+	sizeButtons->AddItem(topSizeButton);
+	// Bottom
+	ArrowTextButton *bottomSizeButton = new ArrowTextButton();
+	bottomSizeButton->SetMargin(0, -1, 0, 0); // merge border with previous button
+	bottomSizeButton->SetInnerSizeHint(0, 0, 42, 29);
+	bottomSizeButton->LoadImage(vg, "images\\arrow8.png");
+	bottomSizeButton->SetText("Taille");
+	sizeButtons->AddItem(bottomSizeButton);
+	sizeButtons->AutoSizeHint();
+	sizeShelf->SetContent(sizeButtons);
 	sizeShelf->AutoSizeHint();
+
 	shelf->AddItem(sizeShelf);
 
 	shelf->AddItem(new ShelfSeparator());
@@ -1461,7 +1576,7 @@ int main()
 
 	colorWidgets->AddItem(colorGrid);
 
-	ImageShelfButton *editColorButton = new ImageShelfButton();
+	TextImageButton *editColorButton = new TextImageButton();
 	editColorButton->SetMargin(1, 0, 0, 0);
 	editColorButton->SetInnerSizeHint(0, 0, 66, 66);
 	editColorButton->LoadImage(vg, "images\\colors32.png");
@@ -1479,7 +1594,7 @@ int main()
 	shelf->AddItem(new ShelfSeparator());
 
 	ShelfSection *paint3dShelf = new ShelfSection();
-	ImageShelfButton *paint3dButton = new ImageShelfButton();
+	TextImageButton *paint3dButton = new TextImageButton();
 	paint3dButton->SetMargin(4, 4, 6, 0);
 	paint3dButton->SetInnerSizeHint(0, 0, 48, 66);
 	paint3dButton->LoadImage(vg, "images\\paint3d32.png");

@@ -126,6 +126,7 @@ public: // protected
 	}
 
 	void ResetMouse() override {
+		UiElement::ResetMouse();
 		if (m_isMouseOver && !m_wasMouseOver) {
 			OnMouseEnter();
 		}
