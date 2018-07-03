@@ -193,6 +193,9 @@ struct Editor {
 	NVGcolor backgroundColor = nvgRGB(255, 255, 255);
 	Tool currentTool = BrushTool;
 	ColorRole currentColor = ForegroundColor;
+
+	// This is supposed to be a global editing state, not a place for pointers, but as for now this is the less dirty I can do
+	UiLayout *popupLayout = NULL;
 };
 
 // TODO: get rid of this global (might require some kind of signals or passing a pointer to this global state to all the widgets)
@@ -1211,7 +1214,28 @@ protected:
 	}
 };
 
-// TODO: avoid loading several times the arrow image
+class Popup : public UiElement {
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		const ::Rect & r = InnerRect();
+		nvgBeginPath(vg);
+		nvgRect(vg, r.x, r.y, r.w, r.h);
+		nvgFillColor(vg, nvgRGB(251, 252, 253));
+		nvgFill(vg);
+
+		nvgBeginPath(vg);
+		nvgRect(vg, r.x + 1.5, r.y + 1.5, r.w - 3, r.h - 3);
+		nvgStrokeColor(vg, nvgRGB(254, 254, 255));
+		nvgStroke(vg);
+
+		nvgBeginPath(vg);
+		nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+		nvgStrokeColor(vg, nvgRGB(220, 221, 222));
+		nvgStroke(vg);
+	}
+};
+
+// TODO: remove
 class SizeShelfButton : public TextImageButton {
 public:
 	~SizeShelfButton() {
@@ -1235,6 +1259,20 @@ public: // protected
 		TextImageButton::Paint(vg);
 		const ::Rect & r = InnerRect();
 		m_arrowImage.Paint(r.x + (r.w - m_arrowImage.Width()) / 2, r.y + r.h - 3 - m_arrowImage.Height());
+	}
+
+	void OnMouseClick(int button, int action, int mods) override {
+		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+			// Pop up
+			// avoid poping it multiple times
+			while (ed->popupLayout->ItemCount() > 1) {
+				delete ed->popupLayout->RemoveItem();
+			}
+			const ::Rect & r = InnerRect();
+			Popup *popup = new Popup();
+			popup->SetRect(r.x, r.y + r.h, 132, 166);
+			ed->popupLayout->AddItem(popup);
+		}
 	}
 
 private:
@@ -1386,9 +1424,12 @@ int main()
 	doc->SetSize(254, 280);
 	
 
-	VBoxLayout *layout = new VBoxLayout();
-	window.SetContent(layout);
+	PopupLayout *popupLayout = new PopupLayout();
+	window.SetContent(popupLayout);
 
+	VBoxLayout *layout = new VBoxLayout();
+
+	// Menu bar
 	MenuBar *top = new MenuBar();
 	FileButton *fileButton = new FileButton();
 	top->AddItem(fileButton);
@@ -1494,13 +1535,24 @@ int main()
 	shelf->AddItem(new ShelfSeparator());
 
 	ShelfSection *brushesShelf = new ShelfSection();
-	SizeShelfButton *brushesButton = new SizeShelfButton();
-	brushesButton->SetMargin(4, 4, 6, 0);
-	brushesButton->SetInnerSizeHint(0, 0, 50, 66);
-	brushesButton->LoadImages(vg, "images\\brush32.png", "images\\arrow8.png");
-	brushesButton->SetText("Pinceaux");
-	brushesShelf->SetContent(brushesButton);
+	DoubleShelfButtonLayout *brushesButtons = new DoubleShelfButtonLayout();
+	brushesButtons->SetMargin(4, 4, 6, 0);
+	// Top
+	ImageButton *topBrushesButton = new ImageButton();
+	topBrushesButton->SetInnerSizeHint(0, 0, 50, 38);
+	topBrushesButton->LoadImage(vg, "images\\brush32.png");
+	brushesButtons->AddItem(topBrushesButton);
+	// Bottom
+	ArrowTextButton *bottomBrushesButton = new ArrowTextButton();
+	bottomBrushesButton->SetMargin(0, -1, 0, 0); // merge border with previous button
+	bottomBrushesButton->SetInnerSizeHint(0, 0, 50, 29);
+	bottomBrushesButton->LoadImage(vg, "images\\arrow8.png");
+	bottomBrushesButton->SetText("Pinceaux");
+	brushesButtons->AddItem(bottomBrushesButton);
+	brushesButtons->AutoSizeHint();
+	brushesShelf->SetContent(brushesButtons);
 	brushesShelf->AutoSizeHint();
+
 	shelf->AddItem(brushesShelf);
 
 	shelf->AddItem(new ShelfSeparator());
@@ -1513,22 +1565,13 @@ int main()
 	shelf->AddItem(new ShelfSeparator());
 
 	ShelfSection *sizeShelf = new ShelfSection();
-	DoubleShelfButtonLayout *sizeButtons = new DoubleShelfButtonLayout();
-	sizeButtons->SetMargin(4, 4, 6, 0);
-	// Top
-	ImageButton *topSizeButton = new ImageButton();
-	topSizeButton->SetInnerSizeHint(0, 0, 42, 38);
-	topSizeButton->LoadImage(vg, "images\\stroke32.png");
-	sizeButtons->AddItem(topSizeButton);
-	// Bottom
-	ArrowTextButton *bottomSizeButton = new ArrowTextButton();
-	bottomSizeButton->SetMargin(0, -1, 0, 0); // merge border with previous button
-	bottomSizeButton->SetInnerSizeHint(0, 0, 42, 29);
-	bottomSizeButton->LoadImage(vg, "images\\arrow8.png");
-	bottomSizeButton->SetText("Taille");
-	sizeButtons->AddItem(bottomSizeButton);
-	sizeButtons->AutoSizeHint();
-	sizeShelf->SetContent(sizeButtons);
+	
+	SizeShelfButton *sizeButton = new SizeShelfButton();
+	sizeButton->SetMargin(4, 4, 6, 0);
+	sizeButton->SetInnerSizeHint(0, 0, 42, 66);
+	sizeButton->LoadImages(vg, "images\\stroke32.png", "images\\arrow8.png");
+	sizeButton->SetText("Taille");
+	sizeShelf->SetContent(sizeButton);
 	sizeShelf->AutoSizeHint();
 
 	shelf->AddItem(sizeShelf);
@@ -1614,10 +1657,13 @@ int main()
 	layout->AddItem(paintArea);
 
 	StatusBar *statusBar = new StatusBar();
-	layout->AddItem(statusBar);
-	layout->SetRect(0, 0, WIDTH, HEIGHT);
-
 	statusBar->LoadImages(vg);
+	layout->AddItem(statusBar);
+
+	popupLayout->AddItem(layout);
+
+	ed->popupLayout = popupLayout;
+	popupLayout->SetRect(0, 0, WIDTH, HEIGHT);
 
 	// Load images
 	Image cropOffImg(vg, "images\\cropOff18.png");

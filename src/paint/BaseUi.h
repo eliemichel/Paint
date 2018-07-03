@@ -144,11 +144,13 @@ public: // protected
 	virtual void OnMouseLeave() {
 	}
 
+	// TODO: Add IsMouseOver() instead of recoding it in subclasses
+
 private:
 	bool m_isMouseOver, m_wasMouseOver;
 };
 
-
+/// When inheriting, override  Update() and GetIndexAt()
 class UiLayout : public UiElement {
 public:
 	UiLayout()
@@ -166,6 +168,16 @@ public:
 	/// Take ownership of the item
 	void AddItem(UiElement *item) {
 		m_items.push_back(item);
+	}
+	/// Give back ownership of the item
+	UiElement *RemoveItem() {
+		UiElement *item = m_items.back();
+		m_items.pop_back();
+		return item;
+	}
+
+	size_t ItemCount() const {
+		return Items().size();
 	}
 
 public: // protected
@@ -228,6 +240,33 @@ private:
 	int m_mouseFocusIdx;
 };
 
+// Item 0 is the background, other items are stacked popups
+class PopupLayout : public UiLayout {
+public: // protected
+	void Update() override {
+		const ::Rect & r = InnerRect();
+		if (Items().size() > 0) {
+			Items()[0]->SetRect(r);
+		}
+	}
+
+protected:
+	bool GetIndexAt(size_t & idx, int x, int y) override {
+		const ::Rect & r = InnerRect();
+		if (Items().size() == 0) {
+			return false;
+		}
+		for (size_t i = Items().size() - 1; i > 0; --i) {
+			if (Items()[i]->Rect().Contains(x, y)) {
+				idx = i;
+				return true;
+			}
+		}
+		idx = 0;
+		return true;
+	}
+};
+
 class GridLayout : public UiLayout {
 public:
 	GridLayout()
@@ -249,7 +288,7 @@ public:
 	void SetColSpacing(int spacing) { m_colSpacing = spacing; }
 	int ColSpacing() const { return m_colSpacing; }
 
-public:
+public: // protected
 	void Update() override {
 		const ::Rect & r = InnerRect();
 		int itemWidth = (r.w - ColSpacing() * (ColCount() - 1)) / ColCount() + ColSpacing();
