@@ -231,6 +231,8 @@ protected:
 	std::vector<UiElement*> & Items() { return m_items; }
 	const std::vector<UiElement*> & Items() const { return m_items; }
 
+	int MouseFocusIdx() const { return m_mouseFocusIdx; }
+
 	virtual bool GetIndexAt(size_t & idx, int x, int y) {
 		return false;
 	}
@@ -241,7 +243,7 @@ private:
 };
 
 // Item 0 is the background, other items are stacked popups
-class PopupLayout : public UiLayout {
+class PopupStackLayout : public UiLayout {
 public: // protected
 	void Update() override {
 		const ::Rect & r = InnerRect();

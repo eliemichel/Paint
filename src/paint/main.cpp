@@ -193,6 +193,10 @@ struct Editor {
 	NVGcolor backgroundColor = nvgRGB(255, 255, 255);
 	Tool currentTool = BrushTool;
 	ColorRole currentColor = ForegroundColor;
+	float strokeSize = 3.5;
+
+	// UI state
+	bool isSizePopupOpened = false;
 
 	// This is supposed to be a global editing state, not a place for pointers, but as for now this is the less dirty I can do
 	UiLayout *popupLayout = NULL;
@@ -621,9 +625,7 @@ private:
 	Image m_cursorImg, m_selectionImg, m_sizeImg, m_savedImg, m_zoomOutImg, m_zoomInImg;
 };
 
-/**
- * May not be a good idea to mix UI and paint stroke engine
- */
+/// May not be a good idea to mix UI and paint stroke engine
 class DrawingArea : public UiMouseAwareElement {
 public:
 	DrawingArea()
@@ -744,6 +746,8 @@ private:
 		nvgMoveTo(m_vg, startX - r.x, startY - r.y);
 		nvgLineTo(m_vg, endX - r.x, endY - r.y);
 		nvgStrokeColor(m_vg, ed->foregroundColor);
+		nvgStrokeWidth(m_vg, ed->strokeSize);
+		nvgLineCap(m_vg, NVG_ROUND);
 		nvgStroke(m_vg);
 
 		nvgRestore(m_vg);
@@ -1119,7 +1123,7 @@ private:
 	std::string m_text;
 };
 
-// Default button with an image on it
+/// Default button with an image on it
 class ImageButton : public UiDefaultButton {
 public:
 	~ImageButton() {
@@ -1152,7 +1156,7 @@ private:
 	Image m_image;
 };
 
-// Default button with a label on it
+/// Default button with a label on it
 class TextButton : public UiDefaultButton {
 public:
 	void SetText(const std::string & text) { m_text = text; }
@@ -1177,8 +1181,8 @@ private:
 	std::string m_text;
 };
 
-// Default button with both a label and an image
-// (Do not do multiple inheritage, it stinks)
+/// Default button with both a label and an image
+/// (Do not do multiple inheritage, it stinks)
 class TextImageButton : public ImageButton {
 public:
 	void SetText(const std::string & text) { m_text = text; }
@@ -1214,10 +1218,17 @@ protected:
 	}
 };
 
-class Popup : public UiElement {
+class SizePopup : public VBoxLayout {
+public:
+	SizePopup()
+		: VBoxLayout()
+	{
+		SetMargin(2, 2, 2, 4);
+	}
+
 public: // protected
 	void Paint(NVGcontext *vg) const override {
-		const ::Rect & r = InnerRect();
+		const ::Rect & r = Rect(); // Not inner rect! (margin is used as padding)
 		nvgBeginPath(vg);
 		nvgRect(vg, r.x, r.y, r.w, r.h);
 		nvgFillColor(vg, nvgRGB(251, 252, 253));
@@ -1232,10 +1243,54 @@ public: // protected
 		nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
 		nvgStrokeColor(vg, nvgRGB(220, 221, 222));
 		nvgStroke(vg);
+
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, r.x + 2, r.y + r.h - 3.5);
+		nvgLineTo(vg, r.x + r.w - 2, r.y + r.h - 3.5);
+		nvgStrokeColor(vg, nvgRGB(220, 221, 222));
+		nvgStroke(vg);
+
+		VBoxLayout::Paint(vg);
 	}
 };
 
-// TODO: remove
+class StrokeButton : public UiDefaultButton {
+public:
+	StrokeButton(float thickness = 2.0)
+		: UiDefaultButton()
+		, m_thickness(thickness)
+	{
+		SetSizeHint(0, 0, 128, 40);
+	}
+
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		UiDefaultButton::Paint(vg);
+		const ::Rect & r = InnerRect();
+		nvgBeginPath(vg);
+		nvgRect(vg, r.x + 4, r.y + (r.h - m_thickness - 1 + (m_thickness - 1.0) / 6.0) / 2, r.w - 8, m_thickness);
+		nvgFillColor(vg, nvgRGB(30, 57, 91));
+		nvgFill(vg);
+	}
+
+	void OnMouseClick(int button, int action, int mods) override {
+		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+			ed->strokeSize = m_thickness;
+			// Close popup
+			while (ed->popupLayout->ItemCount() > 1) {
+				delete ed->popupLayout->RemoveItem();
+			}
+			ed->isSizePopupOpened = false;
+		}
+	}
+
+protected:
+	bool IsCurrent() const override { return ed->strokeSize == m_thickness; }
+
+private:
+	float m_thickness;
+};
+
 class SizeShelfButton : public TextImageButton {
 public:
 	~SizeShelfButton() {
@@ -1262,21 +1317,52 @@ public: // protected
 	}
 
 	void OnMouseClick(int button, int action, int mods) override {
-		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS && !IsCurrent()) {
 			// Pop up
 			// avoid poping it multiple times
 			while (ed->popupLayout->ItemCount() > 1) {
 				delete ed->popupLayout->RemoveItem();
 			}
 			const ::Rect & r = InnerRect();
-			Popup *popup = new Popup();
+			SizePopup *popup = new SizePopup();
+			popup->AddItem(new StrokeButton(1.0));
+			popup->AddItem(new StrokeButton(2.0));
+			popup->AddItem(new StrokeButton(3.5));
+			popup->AddItem(new StrokeButton(6.0));
 			popup->SetRect(r.x, r.y + r.h, 132, 166);
 			ed->popupLayout->AddItem(popup);
+
+			ed->isSizePopupOpened = true;
 		}
 	}
 
+protected:
+	bool IsCurrent() const override { return ed->isSizePopupOpened; }
+
 private:
 	Image m_arrowImage;
+};
+
+class MainLayout : public PopupStackLayout {
+public: // protected
+	void OnMouseClick(int button, int action, int mods) override {
+		bool closeSizePopup = false;
+		if (action == GLFW_PRESS) {
+			// When one clicks on the background element, all popups are destroyed
+			if (MouseFocusIdx() <= 0) {
+				closeSizePopup = ed->isSizePopupOpened;
+				while (Items().size() > 1) {
+					delete RemoveItem();
+				}
+			}
+		}
+
+		PopupStackLayout::OnMouseClick(button, action, mods);
+
+		if (closeSizePopup) {
+			ed->isSizePopupOpened = false;
+		}
+	}
 };
 
 class UiWindow {
@@ -1410,7 +1496,6 @@ private:
 	mutable int m_width, m_height;
 };
 
-// The MAIN function, from here we start the application and run the game loop
 int main()
 {
 	UiWindow window;
@@ -1423,8 +1508,7 @@ int main()
 	doc->CreateImage(vg, 1, 1);
 	doc->SetSize(254, 280);
 	
-
-	PopupLayout *popupLayout = new PopupLayout();
+	MainLayout *popupLayout = new MainLayout();
 	window.SetContent(popupLayout);
 
 	VBoxLayout *layout = new VBoxLayout();
