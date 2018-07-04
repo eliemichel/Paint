@@ -181,6 +181,14 @@ enum Tool {
 	PickTool,
 	ZoomTool,
 	BrushTool,
+	Calligraphy1BrushTool,
+	Calligraphy2BrushTool,
+	AirBrushTool,
+	OilBrushTool,
+	CrayonTool,
+	MarkerBrushTool,
+	NaturalPencilBrushTool,
+	WatercolorBrushTool,
 	SelectTool,
 };
 enum ColorRole {
@@ -197,6 +205,7 @@ struct Editor {
 
 	// UI state
 	bool isSizePopupOpened = false;
+	bool isBrushPopupOpened = false;
 
 	// This is supposed to be a global editing state, not a place for pointers, but as for now this is the less dirty I can do
 	UiLayout *popupLayout = NULL;
@@ -493,6 +502,7 @@ private:
 	bool m_isEnabled;
 };
 
+/// Should inherit from ImageButton?
 class ToolButton : public UiDefaultButton {
 public:
 	~ToolButton() {
@@ -1141,7 +1151,7 @@ public:
 protected:
 	virtual void PaintImage(NVGcontext *vg) const {
 		const ::Rect & r = InnerRect();
-		m_image.Paint(r.x + (r.w - m_image.Width()) / 2, r.y + 3);
+		ImageLabel().Paint(r.x + (r.w - ImageLabel().Width()) / 2, r.y + 3);
 	}
 
 	const Image & ImageLabel() const { return m_image; };
@@ -1254,6 +1264,42 @@ public: // protected
 	}
 };
 
+class BrushPopup : public GridLayout {
+public:
+	BrushPopup()
+		: GridLayout()
+	{
+		SetMargin(2, 2, 2, 4);
+	}
+
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		const ::Rect & r = Rect(); // Not inner rect! (margin is used as padding)
+		nvgBeginPath(vg);
+		nvgRect(vg, r.x, r.y, r.w, r.h);
+		nvgFillColor(vg, nvgRGB(251, 252, 253));
+		nvgFill(vg);
+
+		nvgBeginPath(vg);
+		nvgRect(vg, r.x + 1.5, r.y + 1.5, r.w - 3, r.h - 3);
+		nvgStrokeColor(vg, nvgRGB(254, 254, 255));
+		nvgStroke(vg);
+
+		nvgBeginPath(vg);
+		nvgRect(vg, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+		nvgStrokeColor(vg, nvgRGB(220, 221, 222));
+		nvgStroke(vg);
+
+		nvgBeginPath(vg);
+		nvgMoveTo(vg, r.x + 2, r.y + r.h - 3.5);
+		nvgLineTo(vg, r.x + r.w - 2, r.y + r.h - 3.5);
+		nvgStrokeColor(vg, nvgRGB(220, 221, 222));
+		nvgStroke(vg);
+
+		GridLayout::Paint(vg);
+	}
+};
+
 class StrokeButton : public UiDefaultButton {
 public:
 	StrokeButton(float thickness = 2.0)
@@ -1343,14 +1389,115 @@ private:
 	Image m_arrowImage;
 };
 
+/// Should inherit from ToolButton?
+class BrushButton : public ImageButton {
+public:
+	const Tool & TargetTool() const { return m_targetTool; }
+	void SetTargetTool(const Tool & tool) { m_targetTool = tool; }
+
+public: // protected
+	void OnMouseClick(int button, int action, int mods) override {
+		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+			ed->currentTool = TargetTool();
+			// Close popup
+			while (ed->popupLayout->ItemCount() > 1) {
+				delete ed->popupLayout->RemoveItem();
+			}
+			ed->isBrushPopupOpened = false;
+		}
+	}
+
+protected:
+	bool IsCurrent() const override { return ed->currentTool == TargetTool(); }
+
+	virtual void PaintImage(NVGcontext *vg) const {
+		// Paint centered on both axis
+		const ::Rect & r = InnerRect();
+		ImageLabel().Paint(r.x + (r.w - ImageLabel().Width()) / 2, r.y + (r.h - ImageLabel().Height()) / 2);
+	}
+
+private:
+	Tool m_targetTool;
+};
+
+class BrushPopupButton : public ArrowTextButton {
+public:
+	BrushPopupButton() : m_vg(NULL) {}
+
+public: // protected
+	void Paint(NVGcontext *vg) const override {
+		// Dirty hack to have access to vg ctx when creating popup
+		m_vg = vg;
+		ArrowTextButton::Paint(vg);
+	}
+
+	void OnMouseClick(int button, int action, int mods) override {
+		if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS && !IsCurrent()) {
+			if (NULL == m_vg) {
+				return;
+			}
+			// Pop up
+			// avoid poping it multiple times
+			while (ed->popupLayout->ItemCount() > 1) {
+				delete ed->popupLayout->RemoveItem();
+			}
+			const ::Rect & r = InnerRect();
+			BrushPopup *popup = new BrushPopup();
+			popup->SetColCount(4);
+			popup->SetRowCount(3);
+			const std::string brushImages[] = {
+				"images\\brush32.png",
+				"images\\calligraphy1Brush32.png",
+				"images\\calligraphy2Brush32.png",
+				"images\\airbrush32.png",
+				"images\\oilbrush32.png",
+				"images\\crayon32.png",
+				"images\\markerBrush32.png",
+				"images\\naturalPencilBrush32.png",
+				"images\\watercolorBrush32.png",
+			};
+			const Tool brushTools[] = {
+				BrushTool,
+				Calligraphy1BrushTool,
+				Calligraphy2BrushTool,
+				AirBrushTool,
+				OilBrushTool,
+				CrayonTool,
+				MarkerBrushTool,
+				NaturalPencilBrushTool,
+				WatercolorBrushTool,
+			};
+			for (size_t i = 0; i < 9; ++i) {
+				BrushButton *button = new BrushButton();
+				button->LoadImage(m_vg, brushImages[i]);
+				button->SetTargetTool(brushTools[i]);
+				button->SetInnerSizeHint(0, 0, 40, 40);
+				popup->AddItem(button);
+			}
+			popup->SetRect(r.x, r.y + r.h, 164, 126);
+			ed->popupLayout->AddItem(popup);
+
+			ed->isBrushPopupOpened = true;
+		}
+	}
+
+protected:
+	bool IsCurrent() const override { return ed->isBrushPopupOpened; }
+
+private:
+	mutable NVGcontext * m_vg;
+};
+
 class MainLayout : public PopupStackLayout {
 public: // protected
 	void OnMouseClick(int button, int action, int mods) override {
 		bool closeSizePopup = false;
+		bool closeBrushPopup = false;
 		if (action == GLFW_PRESS) {
 			// When one clicks on the background element, all popups are destroyed
 			if (MouseFocusIdx() <= 0) {
 				closeSizePopup = ed->isSizePopupOpened;
+				closeBrushPopup = ed->isBrushPopupOpened;
 				while (Items().size() > 1) {
 					delete RemoveItem();
 				}
@@ -1361,6 +1508,9 @@ public: // protected
 
 		if (closeSizePopup) {
 			ed->isSizePopupOpened = false;
+		}
+		if (closeBrushPopup) {
+			ed->isBrushPopupOpened = false;
 		}
 	}
 };
@@ -1627,7 +1777,7 @@ int main()
 	topBrushesButton->LoadImage(vg, "images\\brush32.png");
 	brushesButtons->AddItem(topBrushesButton);
 	// Bottom
-	ArrowTextButton *bottomBrushesButton = new ArrowTextButton();
+	BrushPopupButton *bottomBrushesButton = new BrushPopupButton();
 	bottomBrushesButton->SetMargin(0, -1, 0, 0); // merge border with previous button
 	bottomBrushesButton->SetInnerSizeHint(0, 0, 50, 29);
 	bottomBrushesButton->LoadImage(vg, "images\\arrow8.png");
