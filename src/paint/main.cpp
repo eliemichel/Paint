@@ -512,12 +512,16 @@ public:
 	const Tool & TargetTool() const { return m_targetTool; }
 	void SetTargetTool(const Tool & tool) { m_targetTool = tool; }
 
-	void LoadImage(NVGcontext *vg, const std::string & path) {
+	void LoadImages(NVGcontext *vg, const std::string & path, const std::string& pathHover, const std::string& pathActive) {
 		m_image.Load(vg, path);
+		m_imageHover.Load(vg, pathHover);
+		m_imageActive.Load(vg, pathActive);
 	}
 	// Call this or destroy object before the NVG context gets freed
 	void DeleteImage() {
 		m_image.Delete();
+		m_imageHover.Delete();
+		m_imageActive.Delete();
 	}
 
 protected:
@@ -529,7 +533,9 @@ public: // protected
 	void Paint(NVGcontext *vg) const override {
 		UiDefaultButton::Paint(vg);
 		const ::Rect & r = InnerRect();
-		m_image.Paint(r.x + 1, r.y);
+		const auto& image = IsMouseOver() ? m_imageHover : IsCurrent() ? m_imageActive : m_image;
+		image.Paint(r.x + 1, r.y + 1);
+		//image.Paint(r.x + 2, r.y + 1, image.Width() - 1, image.Height() - 1);
 	}
 
 	void OnMouseClick(int button, int action, int mods) override {
@@ -541,6 +547,8 @@ public: // protected
 private:
 	Tool m_targetTool;
 	Image m_image;
+	Image m_imageHover;
+	Image m_imageActive;
 };
 
 class MenuBar : public HBoxLayout {
@@ -1747,16 +1755,17 @@ int main()
 
 	const Tool tools[] = {PencilTool, FillTool, TextTool, EraseTool, PickTool, ZoomTool};
 	const std::string filenames[] = {
-		"images\\pencil21.png",
-		"images\\fill21.png",
-		"images\\text21.png",
-		"images\\erase21.png",
-		"images\\picker21.png",
-		"images\\zoom21.png",
+		"images\\pencil21-20.png","images\\pencilHover21-20.png","images\\pencilActive21-20.png",
+		"images\\fill22-20.png","images\\fillHover22-20.png","images\\fillActive22-20.png",
+		"images\\text20.png","images\\textHover20.png","images\\textActive20.png",
+		"images\\erase21-20.png","images\\eraseHover21-20.png","images\\eraseActive21-20.png",
+		"images\\picker22-20.png","images\\pickerHover22-20.png","images\\pickerActive22-20.png",
+		"images\\zoom20.png","images\\zoomHover20.png","images\\zoomActive20.png",
 	};
+	const int widths[] = {21, 22, 20, 21, 22, 20};
 	for (size_t i = 0; i < 6; ++i) {
 		ToolButton *toolButton = new ToolButton();
-		toolButton->LoadImage(vg, filenames[i]); 
+		toolButton->LoadImages(vg, filenames[3 * i + 0], filenames[3 * i + 1], filenames[3 * i + 2]);
 		toolButton->SetTargetTool(tools[i]);
 		toolsGrid->AddItem(toolButton);
 	}
